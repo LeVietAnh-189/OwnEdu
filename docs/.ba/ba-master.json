@@ -1,0 +1,57 @@
+{
+  "active_project": "ownedu",
+  "active_feature": null,
+  "preset": "default",
+  "source_kind": "brief",
+  "current_node": "done",
+  "completed_nodes": [
+    "project-brief",
+    "discovery",
+    "system-architecture",
+    "microservices-event-bus",
+    "database-design",
+    "prompt-engineering-spec",
+    "api-contracts",
+    "frontend-architecture",
+    "doc-ingestion",
+    "ai-exam-generator",
+    "interactive-testing",
+    "ai-grading-feedback"
+  ],
+  "skipped_nodes": [],
+  "features": [
+    {
+      "id": "doc-ingestion",
+      "service": "document-service",
+      "status": "COMPLETED",
+      "artifacts": ["urd", "brd", "spec", "usecases", "flows"]
+    },
+    {
+      "id": "ai-exam-generator",
+      "service": "ai-engine-worker",
+      "status": "COMPLETED",
+      "artifacts": ["urd", "brd", "spec", "usecases", "flows"]
+    },
+    {
+      "id": "interactive-testing",
+      "service": "exam-service",
+      "status": "COMPLETED",
+      "artifacts": ["urd", "brd", "spec", "usecases", "flows"]
+    },
+    {
+      "id": "ai-grading-feedback",
+      "service": "grading-service",
+      "status": "COMPLETED",
+      "artifacts": ["urd", "brd", "spec", "usecases", "flows"]
+    }
+  ],
+  "technical_artifacts": [
+    "database-design.md",
+    "prompt-engineering-spec.md",
+    "api-contracts.md",
+    "microservices-event-bus.md",
+    "system-architecture.md",
+    "frontend-architecture.md"
+  ],
+  "updated_at": "2026-09-18T23:32:45.000Z"
+}
