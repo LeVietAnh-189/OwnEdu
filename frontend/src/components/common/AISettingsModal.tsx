@@ -141,9 +141,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClos
               onChange={(e) => setActiveModel(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-900 font-medium focus:border-orange-600 focus:ring-1 focus:ring-orange-600 focus:outline-none"
             >
-              <option value="gemini-1.5-flash">Google Gemini 1.5 Flash (Khuyến nghị - Tốc độ cao & Miễn phí)</option>
-              <option value="gemini-2.0-flash">Google Gemini 2.0 Flash (Thế hệ mới nhất)</option>
-              <option value="gemini-1.5-pro">Google Gemini 1.5 Pro (Lập luận chuyên sâu)</option>
+              <option value="gemini-3.5-flash">Google Gemini 3.5 Flash (Khuyến nghị - Nhanh & Chuẩn xác nhất)</option>
+              <option value="gemini-3.1-flash-lite">Google Gemini 3.1 Flash Lite (Siêu tốc & Tiết kiệm)</option>
               <option value="offline-smart">Bộ sinh ngữ cảnh nội bộ (Không cần API Key)</option>
             </select>
           </div>

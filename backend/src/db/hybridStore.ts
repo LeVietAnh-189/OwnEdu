@@ -17,7 +17,7 @@ import {
 export interface SystemSettings {
   geminiApiKey?: string;
   openaiApiKey?: string;
-  activeModel: 'gemini-1.5-flash' | 'gemini-2.0-flash' | 'gemini-1.5-pro' | 'gpt-4o-mini' | 'offline-smart';
+  activeModel: 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'gpt-4o-mini' | 'offline-smart';
 }
 
 interface DatabaseSchema {
@@ -488,7 +488,7 @@ export class HybridStore {
       this.data.settings = {
         geminiApiKey: process.env.GEMINI_API_KEY || '',
         openaiApiKey: process.env.OPENAI_API_KEY || '',
-        activeModel: (process.env.GEMINI_API_KEY ? 'gemini-1.5-flash' : 'offline-smart') as any,
+        activeModel: (process.env.GEMINI_API_KEY ? 'gemini-3.5-flash' : 'offline-smart') as any,
       };
     }
     return this.data.settings;

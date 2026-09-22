@@ -2,6 +2,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/hybridStore.js';
 import { Exam, Question, ExamConfig, DocumentChunk } from '../types.js';
 
+function cleanMarkdownForLLM(rawMd: string): string {
+  if (!rawMd) return '';
+  return rawMd
+    .replace(/!\[[^\]]*\]\(data:image\/[^)]+\)/g, '[Hình ảnh minh họa]')
+    .replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, '[Ảnh]')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export async function generateExamJob(
   jobId: string, 
   documentId: string, 
@@ -23,19 +32,20 @@ export async function generateExamJob(
   await new Promise(r => setTimeout(r, 600));
 
   const chunks = db.getChunksByDocumentId(documentId);
-  // Prefer clean Markdown extracted by MinerU if available
-  const contextText = document.markdownText && document.markdownText.trim().length > 50
-    ? `# TÀI LIỆU HỌC TẬP CHUẨN HÓA: ${document.filename}\n\n${document.markdownText}`
+  // Prefer clean Markdown extracted by MinerU without heavy base64 image strings
+  const rawContext = document.markdownText && document.markdownText.trim().length > 50
+    ? `# TÀI LIỆU HỌC TẬP CHUẨN HÓA (MINERU): ${document.filename}\n\n${document.markdownText}`
     : chunks.map(c => `[Phần: ${c.chapterTitle || 'Kiến thức'}]:\n${c.contentText}`).join('\n\n');
+  const contextText = cleanMarkdownForLLM(rawContext);
 
   // Check AI settings
   const settings = db.getSettings();
   const geminiKey = process.env.GEMINI_API_KEY || settings.geminiApiKey;
   const openaiKey = process.env.OPENAI_API_KEY || settings.openaiApiKey;
-  const activeModel = settings.activeModel || 'gemini-1.5-flash';
+  const activeModel = settings.activeModel || 'gemini-3.1-flash-lite-preview';
 
   // Step 2: 45% - CALLING_LLM
-  const modelName = geminiKey ? (activeModel === 'offline-smart' ? 'gemini-1.5-flash' : activeModel) : (openaiKey ? 'gpt-4o-mini' : 'Bộ Sinh Ngữ Cảnh Chuyên Sâu (Local)');
+  const modelName = geminiKey ? (activeModel === 'offline-smart' ? 'gemini-3.1-flash-lite-preview' : activeModel) : (openaiKey ? 'gpt-4o-mini' : 'Bộ Sinh Ngữ Cảnh Chuyên Sâu (Local)');
   db.emitSSEProgress({
     jobId,
     progressPercent: 45,
@@ -116,10 +126,16 @@ async function callGeminiLLM(
   config: ExamConfig,
   examTitle: string,
   apiKey: string,
-  modelName = 'gemini-1.5-flash'
+  modelName = 'gemini-3.5-flash'
 ): Promise<Question[]> {
-  const targetModel = modelName === 'offline-smart' ? 'gemini-1.5-flash' : modelName;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+  const candidateModels = [
+    modelName && modelName !== 'offline-smart' && !modelName.includes('2.0') && !modelName.includes('1.5') ? modelName : 'gemini-3.1-flash-lite-preview',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+  ];
+  const uniqueModels = Array.from(new Set(candidateModels));
 
   const prompt = `Bạn là Chuyên gia Sư phạm và Khảo thí cấp cao của nền tảng OwnEdu.
 Nhiệm vụ của bạn là đọc kỹ tài liệu học tập được cung cấp và tạo ra một bộ đề thi kiểm tra chất lượng cao, bao gồm cả câu hỏi trắc nghiệm (MCQ) và câu hỏi tự luận (Essay).
@@ -192,29 +208,63 @@ Cấu trúc JSON mong muốn:
   ]
 }`;
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        response_mime_type: 'application/json',
-        temperature: 0.2,
-      }
-    })
-  });
+  let lastError: any = null;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${errorText}`);
+  for (const targetModel of uniqueModels) {
+    try {
+      console.log(`[AI Worker] Attempting Gemini API with model: ${targetModel}...`);
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+
+      let response: any = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              response_mime_type: 'application/json',
+              temperature: 0.2,
+            }
+          }),
+          signal: AbortSignal.timeout(60000)
+        });
+
+        if (response.status === 503) {
+          console.warn(`[AI Worker] Model ${targetModel} returned 503 (high demand), waiting 2s to retry...`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        break;
+      }
+
+      if (!response || !response.ok) {
+        const errorText = await response.text();
+        console.warn(`[AI Worker] Model ${targetModel} returned ${response?.status}:`, errorText.slice(0, 160));
+        lastError = new Error(`Gemini API error (${response?.status}): ${errorText}`);
+        continue;
+      }
+
+      const data = await response.json() as any;
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const rawText = parts.map((p: any) => p.text || '').join('\n').trim();
+      if (!rawText) throw new Error('Empty response parts from Gemini API');
+
+      let jsonStr = rawText;
+      if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+      }
+
+      const parsed = JSON.parse(jsonStr);
+      console.log(`[AI Worker] Successfully generated ${parsed.questions?.length || 0} questions using ${targetModel}!`);
+      return mapParsedQuestions(examId, parsed.questions || []);
+    } catch (err: any) {
+      console.warn(`[AI Worker] Error with model ${targetModel}:`, err.message);
+      lastError = err;
+    }
   }
 
-  const data = await response.json() as any;
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) throw new Error('Empty response from Gemini API');
-
-  const parsed = JSON.parse(rawText);
-  return mapParsedQuestions(examId, parsed.questions || []);
+  throw lastError || new Error('All Gemini candidate models failed');
 }
 
 /**
