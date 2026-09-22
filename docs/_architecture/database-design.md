@@ -56,7 +56,7 @@ CREATE TABLE users (
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(150) NOT NULL,
-    role VARCHAR(30) NOT NULL DEFAULT 'STUDENT', -- 'STUDENT', 'TEACHER', 'ADMIN'
+    role VARCHAR(30) NOT NULL DEFAULT 'USER', -- 'USER' (học sinh/sinh viên/giảng viên), 'ADMIN' (quản trị hệ thống)
     tier VARCHAR(20) NOT NULL DEFAULT 'FREE',     -- 'FREE', 'PRO'
     
     -- [NoSQL]: Tùy biến giao diện, thông báo, môn học quan tâm

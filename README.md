@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OwnEdu — Nền Tảng Khảo Thí & Đánh Giá Năng Lực Ứng Dụng AI
 
-## Getting Started
+Dự án OwnEdu bao gồm:
+- **Backend API Gateway & Microservices**: Node.js / Express + TypeScript (Chạy trực tiếp qua **Bun** trên cổng `3000`).
+- **Frontend Web**: React 18 + Vite + TailwindCSS (Chạy qua **Bun** trên cổng `5173`).
 
-First, run the development server:
+---
+
+## 🚀 Khởi Chạy Nhanh Bằng 1 Lệnh Duy Nhất (Khuyên Dùng)
+
+Dự án đã được cấu hình tối ưu để khởi chạy đồng thời cả Backend và Frontend qua Bun bằng **1 câu lệnh duy nhất**:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
 bun dev
+# hoặc
+bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Hệ thống sẽ tự động:
+1. Chạy Backend tại [http://localhost:3000](http://localhost:3000) (kiểm tra trạng thái tại [http://localhost:3000/health](http://localhost:3000/health)).
+2. Chạy Frontend tại [http://localhost:5173](http://localhost:5173).
+3. Hợp nhất luồng log với tiền tố trực quan `[backend]` và `[frontend]`.
+4. Khi nhấn `Ctrl + C`, cả 2 dịch vụ sẽ được giải phóng an toàn, không gây kẹt cổng.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🛠️ Cài Đặt Ban Đầu (Nếu Cần Cài Lại Package)
 
-## Learn More
+```bash
+# Cài đặt backend
+cd backend
+bun install
 
-To learn more about Next.js, take a look at the following resources:
+# Cài đặt frontend
+cd ../frontend
+bun install
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📦 Cấu Trúc Dự Án
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+ownedu/
+├── backend/                  # REST API Express & TypeScript
+│   ├── src/
+│   │   ├── index.ts          # API Gateway & Route entrypoint
+│   │   ├── routes/           # Routes: AI, Upload, Exams, Grades, Analytics...
+│   │   └── services/         # Mock AI Engine + Logic xử lý
+│   └── package.json
+├── frontend/                 # Giao diện người dùng Vite + React
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── pages/            # 6 module giao diện theo nghiệp vụ BA
+│   │   └── components/       # AI Settings Modal, Navbar, UI Components
+│   └── package.json
+├── dev.ts                    # Runner điều phối đa tiến trình Backend + Frontend
+└── package.json              # Root package quản lý lệnh chạy tổng hợp
+```

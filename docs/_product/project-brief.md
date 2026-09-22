@@ -25,12 +25,12 @@ links: []
 
 ---
 
-## 👥 II. Intended users (Người dùng dự kiến)
+## 👥 II. Intended users & Phân quyền hệ thống (2 Vai trò cốt lõi)
 
-| Nhóm người dùng | Bối cảnh sử dụng | Khó khăn hiện tại | Mục tiêu hướng tới |
-|---|---|---|---|
-| **Học sinh / Sinh viên** | Ôn thi học kỳ, kiểm tra định kỳ từ slide bài giảng, giáo trình môn học của trường | Không biết mình nắm chắc bài đến đâu; thiếu đề luyện bám sát tài liệu riêng | Tải tài liệu lên $\rightarrow$ có đề thi ngay để tự luyện và được chấm điểm, giải thích lỗi sai tức thì |
-| **Giáo viên / Giảng viên** | Soạn đề kiểm tra 15p, 1 tiết, đề thi thử từ tài liệu giảng dạy và bài nghiên cứu | Soạn câu hỏi và đáp án tốn nhiều giờ; chấm bài tự luận thủ công quá tải | Tự động sinh đề kiểm tra đa dạng độ khó bám sát giáo án; có sẵn đáp án và thang chấm rubric |
+| Phân quyền (Role) | Đối tượng đại diện | Mục đích & Phạm vi sử dụng |
+|---|---|---|
+| **Role `USER`** | **Học sinh, Sinh viên, Giảng viên** | **Dùng để học tập & khảo thí**: Tải tài liệu/giáo trình lên, yêu cầu AI sinh đề thi chuẩn Bloom, làm bài thi trực tuyến (MCQ + Tự luận), nhận kết quả chấm điểm tức thì kèm radar phân tích năng lực và lộ trình học tập. |
+| **Role `ADMIN`** | **Quản trị viên (Admin)** | **Quản trị toàn diện hệ thống**: Quản lý tài nguyên lưu trữ & bóc tách chunks, quản lý danh mục môn học/khóa học, theo dõi hạn ngạch & thống kê token AI tiêu thụ, quản lý tài khoản người dùng và thiết lập API Key (Gemini, OpenAI). |
 
 ---
 

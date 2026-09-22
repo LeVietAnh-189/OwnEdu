@@ -69,7 +69,7 @@ Mọi endpoint REST của OwnEdu đều trả về theo một chuẩn Envelope t
   `Authorization: Bearer <JWT_TOKEN>`
 - API Gateway sẽ giải mã JWT và tự động đính kèm các Header nội bộ xuống Microservice:
   - `X-User-Id`: UUID của người dùng hiện tại.
-  - `X-User-Role`: `STUDENT` | `TEACHER` | `ADMIN`.
+  - `X-User-Role`: `USER` (Học sinh/Sinh viên/Giảng viên dùng học tập) | `ADMIN` (Quản trị hệ thống).
   - `X-User-Tier`: `FREE` | `PRO`.
 
 ---

@@ -1,29 +1,110 @@
 # Kiến Trúc Giao Diện & Bố Cục Màn Hình (Frontend Architecture & UI Specs) - OwnEdu
 
 **Dự án**: OwnEdu  
-**Nền tảng**: Web Application (Responsive Desktop & Tablet / Mobile)  
-**Công nghệ khuyến nghị**: Next.js 14+ (App Router) / React 18+ / TypeScript  
-**Quản lý Trạng thái**: Zustand (Client Session Store) & TanStack Query (Server State Cache)  
-**Biểu đồ**: Recharts / Chart.js (Radar Chart Bloom)  
-**Phiên bản**: 1.0.0  
+**Công nghệ Nền tảng**:
+- **Build Tool**: Vite 5+ (Khởi động siêu tốc, HMR)
+- **Framework**: React 18+ (TypeScript)
+- **CSS Framework**: TailwindCSS 3.4+ (Utility-First Styling)
+- **Routing**: `react-router-dom` v6
+- **Quản lý Trạng thái**: Zustand (Client Session Store) & TanStack Query v5 (Server Cache)
+- **Thư viện Icon**: `lucide-react`
+- **Biểu đồ**: `recharts` (Radar Chart Bloom)
+**Phiên bản**: 2.0.0 (Cập nhật Chuẩn Công nghệ: Vite + React + TailwindCSS)  
 **Tài liệu liên quan**:
+- [system-architecture.md](file:///C:/Nexis/ownedu/docs/_architecture/system-architecture.md)
 - [api-contracts.md](file:///C:/Nexis/ownedu/docs/_architecture/api-contracts.md)
 - [database-design.md](file:///C:/Nexis/ownedu/docs/_architecture/database-design.md)
-- [interactive-testing-spec.md](file:///C:/Nexis/ownedu/docs/interactive-testing/srs/interactive-testing-spec.md)
 
 ---
 
-## 1. Bản Đồ Màn Hình & Luồng Điều Hướng (Site Map & Screen Flow)
+## 1. Cấu Trúc Dự Án Chuẩn Vite + React + TailwindCSS
+
+```text
+ownedu-frontend/
+├── index.html
+├── vite.config.ts               # Cấu hình Vite (Proxy /api sang Node.js Gateway :3000)
+├── tailwind.config.js           # Bảng màu chủ đạo & mở rộng breakpoint
+├── postcss.config.js
+├── package.json
+├── src/
+│   ├── main.tsx                 # Điểm khởi động ứng dụng
+│   ├── App.tsx                  # Khởi tạo React Router & React Query Provider
+│   ├── index.css                # @tailwind base; components; utilities;
+│   ├── routes/
+│   │   └── index.tsx            # Định nghĩa toàn bộ Route
+│   ├── pages/                   # Các trang chức năng chính
+│   │   ├── DashboardPage.tsx
+│   │   ├── DocumentUploadPage.tsx
+│   │   ├── ExamGeneratePage.tsx
+│   │   ├── ExamWaitingPage.tsx  # Kết nối SSE stream tiến độ AI
+│   │   ├── ExamReviewPage.tsx   # Xem trước & tinh chỉnh đề
+│   │   ├── ExamRoomPage.tsx     # Phòng thi trực tuyến Fullscreen
+│   │   └── ExamResultPage.tsx   # Báo cáo điểm & Radar Bloom
+│   ├── components/
+│   │   ├── layout/
+│   │   │   ├── Navbar.tsx
+│   │   │   └── ExamHeader.tsx
+│   │   ├── exam/
+│   │   │   ├── CountdownTimer.tsx
+│   │   │   ├── QuestionPalette.tsx
+│   │   │   ├── QuestionViewer.tsx
+│   │   │   ├── MCQOptionsGroup.tsx
+│   │   │   ├── EssayEditor.tsx
+│   │   │   └── SubmitModal.tsx
+│   │   └── results/
+│   │       ├── ScoreHeroCard.tsx
+│   │       ├── BloomRadarChart.tsx
+│   │       └── RubricFeedbackCard.tsx
+│   ├── store/
+│   │   └── examStore.ts         # Zustand store (quản lý state phòng thi)
+│   └── services/
+│       └── apiClient.ts         # Axios instance (gắn JWT Header)
+```
+
+---
+
+## 2. Bảng Màu Thiết Kế Với TailwindCSS (`tailwind.config.js`)
+
+```javascript
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        brand: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          500: '#6366f1', // Indigo hiện đại
+          600: '#4f46e5',
+          700: '#4338ca',
+        },
+        exam: {
+          answered: '#10b981', // Emerald xanh lá: Đã làm
+          flagged: '#f59e0b',  // Amber vàng cam: Cắm cờ
+          active: '#3b82f6',   // Blue: Câu đang chọn
+          unanswered: '#e2e8f0', // Slate xám: Chưa làm
+        }
+      }
+    },
+  },
+  plugins: [],
+}
+```
+
+---
+
+## 3. Bản Đồ Màn Hình & Luồng Điều Hướng (Screen Flow)
 
 ```mermaid
 graph TD
-    Dashboard["1. /dashboard<br>(Thư viện tài liệu & đề thi)"]
-    Upload["2. /documents/upload<br>(Upload kéo thả tệp .pdf/.docx)"]
-    Config["3. /documents/[id]/generate<br>(Form cấu hình sinh đề AI)"]
-    Waiting["4. /exams/generating/[job_id]<br>(Màn hình chờ SSE Progress)"]
-    Review["5. /exams/[id]/review<br>(Xem trước, sửa đề & Xuất bản)"]
-    ExamRoom["6. /exams/[id]/take<br>(Phòng thi tương tác & Auto-save)"]
-    Result["7. /exams/[id]/results/[attempt_id]<br>(Báo cáo điểm & Radar Bloom)"]
+    Dashboard["1. /dashboard<br>Thư viện tài liệu & đề thi"]
+    Upload["2. /documents/upload<br>Upload tệp .pdf/.docx"]
+    Config["3. /documents/:id/generate<br>Form cấu hình AI sinh đề"]
+    Waiting["4. /exams/generating/:jobId<br>Màn hình chờ SSE Progress"]
+    Review["5. /exams/:id/review<br>Xem trước & Sửa đề thi"]
+    ExamRoom["6. /exams/:id/take<br>Phòng thi Fullscreen Auto-save"]
+    Result["7. /exams/:id/results/:attemptId<br>Báo cáo điểm & Radar Bloom"]
 
     Dashboard --> Upload
     Upload --> Config
@@ -36,113 +117,92 @@ graph TD
 
 ---
 
-## 2. Bố Cục Wireframe Chi Tiết Màn Hình Trọng Tâm
+## 4. Bố Cục Màn Hình Phòng Thi & Sử Dụng Lớp Tailwind (`ExamRoomPage.tsx`)
 
-### 2.1. Màn hình Phòng Thi Trực Tuyến (Exam Room Layout - `/exams/[id]/take`)
-Màn hình kích hoạt chế độ **Fullscreen Focus**, ẩn toàn bộ thanh menu website thông thường để thí sinh tập trung tối đa.
-
-```
-+-----------------------------------------------------------------------------------------------+
-|  [OwnEdu Logo]   Đề thi: Kiến trúc Microservices       [Đã tự động lưu 14:32:05 ✓]   [00:42:15 ⏱] |
-+-----------------------------------------------------------------------------------------------+
-|  VÙNG NỘI DUNG CÂU HỎI (70% CHIỀU RỘNG)                 | BẢNG ĐIỀU HƯỚNG CÂU HỎI (30%)        |
-|                                                         |                                       |
-|  Câu 02 / 17  [Mức độ: VẬN DỤNG]   [Điểm: 2.5đ]         | Danh sách câu hỏi:                    |
-|  ----------------------------------------------------   | +-----+-----+-----+-----+-----+       |
-|  Hãy phân tích ưu và nhược điểm của việc tách riêng     | | 01✓ | 02* | 03  | 04✓ | 05✓ |       |
-|  Document Service và AI Worker Service qua Message      | +-----+-----+-----+-----+-----+       |
-|  Queue thay vì gọi đồng bộ qua REST API.                | | 06  | 07✓ | 08⚑ | 09  | 10✓ |       |
-|                                                         | +-----+-----+-----+-----+-----+       |
-|  [Khung Soạn Thảo Bài Làm Tự Luận]                      | | 11✓ | 12  | 13  | 14✓ | 15✓ |       |
-|  +---------------------------------------------------+  | +-----+-----+-----+-----+-----+       |
-|  | Việc tách riêng Document Service và AI Worker     |  | | 16⚑ | 17  |                         |
-|  | mang lại khả năng mở rộng độc lập...              |  | +-----+-----+                         |
-|  |                                                   |  |                                       |
-|  |                                                   |  | Chú thích:                            |
-|  |                                                   |  | [✓] Xanh lá: Đã trả lời (8/17)        |
-|  +---------------------------------------------------+  | [⚑] Vàng cam: Đang cắm cờ xem lại     |
-|  Số từ: 248 từ   |   [Tự động lưu sau 2s dừng gõ]       | [*] Xanh viền: Câu đang chọn          |
-|                                                         | [ ] Xám nhạt: Chưa làm (9/17)         |
-|  [⚑ Đánh dấu xem lại]                                   |                                       |
-|                                                         | ------------------------------------- |
-|  [< Câu trước]                         [Câu tiếp theo >]| [   NỘP BÀI THI CHÍNH THỨC   ]        |
-+-----------------------------------------------------------------------------------------------+
-```
-
----
-
-### 2.2. Màn hình Báo Cáo Kết Quả & Năng Lực (`/exams/[id]/results/[attempt_id]`)
+Màn hình áp dụng bố cục **Fullscreen Focus**, ẩn thanh menu chính, chia lưới `grid-cols-12` (8 cột câu hỏi, 4 cột bảng điều hướng).
 
 ```
 +-----------------------------------------------------------------------------------------------+
-|  KẾT QUẢ BÀI THI: Kiểm tra Giữa kỳ - Kiến trúc Microservices               [Thí sinh: Nam Nguyễn]
+| Header (bg-white border-b px-6 py-4 flex items-center justify-between shadow-sm):             |
+| [OwnEdu Logo]   Đề thi: Kiến trúc Microservices       [Đã tự động lưu 14:32:05 ✓]   [00:42:15 ⏱] |
 +-----------------------------------------------------------------------------------------------+
-|  [ HERO CARD TỔNG KẾT ]                                                                       |
-|  +---------------------------+  +---------------------------+  +----------------------------+ |
-|  | TỔNG ĐIỂM TOÀN BÀI        |  | ĐIỂM TRẮC NGHIỆM          |  | ĐIỂM TỰ LUẬN               | |
-|  |       8.5 / 10.0          |  |       6.5 / 7.5 (13/15)   |  |       2.0 / 2.5 (Rubric)   | |
-|  +---------------------------+  +---------------------------+  +----------------------------+ |
+| Main Body (grid grid-cols-12 h-[calc(100vh-73px)] overflow-hidden):                           |
 |                                                                                               |
-|  [ BIỂU ĐỒ RADAR NĂNG LỰC BLOOM ]       |  [ LỖ HỔNG KIẾN THỨC & GỢI Ý ÔN TẬP ]               |
-|                                         |                                                     |
-|             Nhận biết (100%)            |  1. Nhầm lẫn giữa Choreography Saga & 2PC:          |
-|                   /\                    |     -> Bạn mất điểm ở câu trắc nghiệm số 05.        |
-|                  /  \                   |     [Đọc lại Trang 24-28 trong Slide Giáo Trình ->] |
-|   Phân tích (80%)    Thông hiểu (83%)   |                                                     |
-|        |                |               |  2. Thiếu ví dụ luồng thực tế trong bài tự luận:    |
-|         \              /                |     -> Bị trừ 0.5 điểm ở tiêu chí Rubric số 3.      |
-|          \            /                 |     [Xem lại Phụ lục Case Study Thương Mại Điện Tử] |
-|             Vận dụng (75%)              |                                                     |
+| CỘT TRÁI - NỘI DUNG CÂU HỎI (col-span-8 p-8 overflow-y-auto bg-slate-50):                     |
 |                                                                                               |
-|  [ CHI TIẾT TỪNG CÂU HỎI & BAREM CHẤM CỦA AI ]                                                |
-|  +------------------------------------------------------------------------------------------+ |
-|  | Câu 02 (Tự luận): Phân tích ưu/nhược điểm Message Queue                   [Điểm: 2.0 / 2.5] | |
-|  | - Nhận xét chung của AI: "Phân tích ưu điểm rất mạch lạc, đúng bản chất decoupling..."   | |
-|  | - BAREM TIÊU CHÍ RUBRIC:                                                                 | |
-|  |   * Tiêu chí 1: Nêu được 2 ưu điểm cốt lõi         [1.0 / 1.0 đ] ✓ Đạt yêu cầu            | |
-|  |   * Tiêu chí 2: Chỉ ra nhược điểm độ trễ bất đồng bộ[0.5 / 0.5 đ] ✓ Đạt yêu cầu          | |
-|  |   * Tiêu chí 3: Lấy ví dụ minh họa gắn với hệ thống [0.5 / 1.0 đ] ! Chưa chỉ rõ service   | |
-|  +------------------------------------------------------------------------------------------+ |
+| <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">                  |
+|   <div className="flex items-center justify-between mb-4">                                    |
+|     <span className="text-lg font-bold text-slate-800">Câu 02 / 17</span>                     |
+|     <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-semibold">|
+|       Mức độ: VẬN DỤNG - Điểm: 2.5đ                                                           |
+|     </span>                                                                                   |
+|   </div>                                                                                      |
+|   <p className="text-slate-700 leading-relaxed mb-6 font-medium">                             |
+|     Hãy phân tích ưu và nhược điểm của việc tách riêng Document Service và AI Worker Service  |
+|     qua Message Queue thay vì gọi đồng bộ qua REST API. Đưa ra ví dụ thực tế.                 |
+|   </p>                                                                                        |
+|                                                                                               |
+|   <!-- KHUNG SOẠN THẢO TỰ LUẬN HOẶC PHƯƠNG ÁN TRẮC NGHIỆM -->                                 |
+|   <textarea                                                                                   |
+|     className="w-full h-64 p-4 border border-slate-300 rounded-lg focus:ring-2               |
+|                focus:ring-brand-500 focus:border-transparent resize-none leading-relaxed"    |
+|     placeholder="Nhập câu trả lời tự luận của bạn tại đây..."                                 |
+|   />                                                                                          |
+|                                                                                               |
+|   <div className="flex items-center justify-between mt-4 text-xs text-slate-500">            |
+|     <span>Số từ: 248 từ</span>                                                                |
+|     <span className="text-emerald-600 flex items-center gap-1 font-medium">                   |
+|       <CheckCircle2 className="w-3.5 h-3.5" /> Đã tự động lưu nháp                            |
+|     </span>                                                                                   |
+|   </div>                                                                                      |
+| </div>                                                                                        |
+|                                                                                               |
+| <div className="flex items-center justify-between mt-6">                                      |
+|   <button className="flex items-center gap-2 px-4 py-2 border rounded-lg text-slate-700 ...">  |
+|     <Flag className="w-4 h-4 text-amber-500" /> Đánh dấu xem lại                              |
+|   </button>                                                                                   |
+|   <div className="flex gap-3">                                                                |
+|     <button className="px-5 py-2 border rounded-lg hover:bg-slate-100">Câu trước</button>      |
+|     <button className="px-5 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700">      |
+|       Câu tiếp theo                                                                           |
+|     </button>                                                                                 |
+|   </div>                                                                                      |
+| </div>                                                                                        |
+|                                                                                               |
+| CỘT PHẢI - QUESTION PALETTE (col-span-4 p-6 bg-white border-l border-slate-200 flex flex-col): |
+|                                                                                               |
+| <h3 className="font-bold text-slate-800 mb-4">Danh sách câu hỏi</h3>                          |
+| <div className="grid grid-cols-5 gap-2.5 mb-6">                                              |
+|   <!-- Ô số 1: Đã làm -->                                                                     |
+|   <button className="h-10 rounded-lg bg-emerald-500 text-white font-bold">01</button>        |
+|   <!-- Ô số 2: Đang chọn -->                                                                 |
+|   <button className="h-10 rounded-lg bg-white border-2 border-brand-600 text-brand-600 font-bold">02</button> |
+|   <!-- Ô số 3: Cắm cờ -->                                                                    |
+|   <button className="h-10 rounded-lg bg-amber-500 text-white font-bold relative">             |
+|     03 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>      |
+|   </button>                                                                                   |
+|   <!-- Ô số 4..N: Chưa làm -->                                                                |
+|   <button className="h-10 rounded-lg bg-slate-100 text-slate-600 font-medium hover:bg-slate-200">04</button> |
+| </div>                                                                                        |
+|                                                                                               |
+| <div className="mt-auto pt-6 border-t border-slate-200">                                     |
+|   <button className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold    |
+|                      rounded-xl shadow-lg shadow-emerald-200 transition-all">                 |
+|     NỘP BÀI THI CHÍNH THỨC                                                                    |
+|   </button>                                                                                   |
+| </div>                                                                                        |
 +-----------------------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 3. Kiến Trúc Cây Component (Atomic Component Hierarchy)
+## 5. Quản Lý Trạng Thái Phòng Thi Bằng Zustand (`examStore.ts`)
 
-```text
-src/
-├── components/
-│   ├── layout/
-│   │   ├── AppHeader.tsx            # Header hệ thống chung
-│   │   └── ExamHeader.tsx           # Header phòng thi (chứa Timer & Sync status)
-│   ├── exam-room/
-│   │   ├── CountdownTimer.tsx       # Bộ đếm ngược đồng bộ Server
-│   │   ├── QuestionPalette.tsx      # Bảng 1..N nút bấm điều hướng câu hỏi
-│   │   ├── QuestionViewer.tsx       # Render nội dung câu hỏi hiện tại
-│   │   ├── MCQOptionsGroup.tsx      # Radio button chọn A/B/C/D
-│   │   ├── EssayEditor.tsx          # Khung soạn thảo tự luận + đếm từ
-│   │   ├── AutoSaveStatusBadge.tsx  # Badge hiển thị "Đã lưu lúc..." hoặc "Đang lưu..."
-│   │   └── SubmitConfirmModal.tsx   # Modal tóm tắt số câu đã làm trước khi nộp
-│   ├── results/
-│   │   ├── ScoreHeroCard.tsx        # Card hiển thị điểm lớn
-│   │   ├── BloomRadarChart.tsx      # Biểu đồ radar năng lực Bloom
-│   │   ├── RubricBreakdownCard.tsx  # Bảng chi tiết barem rubric từng câu
-│   │   └── KnowledgeGapList.tsx     # Danh sách gợi ý trang ôn tập
-│   └── common/
-│       ├── FileDropzone.tsx         # Kéo thả file PDF/DOCX
-│       ├── ProgressBar.tsx          # Thanh tiến độ SSE 15% -> 100%
-│       └── OfflineAlertBanner.tsx   # Cảnh báo mất kết nối mạng
-```
-
----
-
-## 4. Quản Lý Trạng Thái Phòng Thi Bằng Zustand (`examStore.ts`)
-
-Đặc tả mã nguồn Store mẫu để quản lý trạng thái phiên thi, xử lý Debounce Auto-save và Offline Resilience:
+Store được viết bằng TypeScript thuần, kết nối hoàn hảo với Axios để thực hiện Auto-save Debounce 2 giây và cơ chế Offline Resilience:
 
 ```typescript
 import { create } from 'zustand';
+import axios from 'axios';
 
 interface AnswerItem {
   questionId: string;
@@ -150,7 +210,7 @@ interface AnswerItem {
   selectedOption?: string;
   essayText?: string;
   isFlagged: boolean;
-  isDirty: boolean; // Đã sửa nhưng chưa lưu
+  isDirty: boolean;
 }
 
 interface ExamState {
@@ -169,9 +229,11 @@ interface ExamState {
   updateEssayText: (questionId: string, text: string) => void;
   toggleFlag: (questionId: string) => void;
   goToQuestion: (index: number) => void;
-  setSyncStatus: (isSyncing: boolean, lastSavedAt?: string) => void;
+  saveAnswerToServer: (questionId: string) => Promise<void>;
   setOfflineStatus: (isOffline: boolean) => void;
 }
+
+let debounceTimer: NodeJS.Timeout | null = null;
 
 export const useExamStore = create<ExamState>((set, get) => ({
   attemptId: null,
@@ -181,7 +243,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
   answers: {},
   isSyncing: false,
   lastSavedAt: null,
-  isOffline: false,
+  isOffline: !navigator.onLine,
 
   initSession: (attemptId, expiresAt, initialAnswers) => {
     set({ attemptId, expiresAt, answers: initialAnswers });
@@ -196,10 +258,12 @@ export const useExamStore = create<ExamState>((set, get) => ({
           questionId,
           type: 'MCQ',
           selectedOption: optionKey,
-          isDirty: true
-        }
-      }
+          isDirty: true,
+        },
+      },
     }));
+    // Trắc nghiệm: Gửi lưu tức thì lên Express Backend
+    get().saveAnswerToServer(questionId);
   },
 
   updateEssayText: (questionId, text) => {
@@ -211,10 +275,16 @@ export const useExamStore = create<ExamState>((set, get) => ({
           questionId,
           type: 'ESSAY',
           essayText: text,
-          isDirty: true
-        }
-      }
+          isDirty: true,
+        },
+      },
     }));
+
+    // Tự luận: Debounce 2000ms trước khi gửi PUT
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      get().saveAnswerToServer(questionId);
+    }, 2000);
   },
 
   toggleFlag: (questionId) => {
@@ -225,28 +295,46 @@ export const useExamStore = create<ExamState>((set, get) => ({
           ...state.answers,
           [questionId]: {
             ...current,
-            isFlagged: !current?.isFlagged
-          }
-        }
+            isFlagged: !current?.isFlagged,
+          },
+        },
       };
     });
   },
 
   goToQuestion: (index) => set({ currentIndex: index }),
-  setSyncStatus: (isSyncing, lastSavedAt) => set({ isSyncing, ...(lastSavedAt && { lastSavedAt }) }),
-  setOfflineStatus: (isOffline) => set({ isOffline })
+
+  saveAnswerToServer: async (questionId) => {
+    const { attemptId, answers, isOffline } = get();
+    const item = answers[questionId];
+    if (!attemptId || !item) return;
+
+    if (isOffline) {
+      // Lưu tạm vào localStorage nếu đang mất mạng
+      localStorage.setItem(`offline_attempt_${attemptId}`, JSON.stringify(answers));
+      return;
+    }
+
+    try {
+      set({ isSyncing: true });
+      await axios.put(`/api/v1/attempts/${attemptId}/answers/${questionId}`, {
+        answer_type: item.type,
+        selected_option: item.selectedOption || null,
+        essay_text: item.essayText || null,
+      });
+      set({ 
+        isSyncing: false, 
+        lastSavedAt: new Date().toLocaleTimeString('vi-VN'),
+        answers: {
+          ...get().answers,
+          [questionId]: { ...item, isDirty: false }
+        }
+      });
+    } catch (err) {
+      set({ isSyncing: false });
+    }
+  },
+
+  setOfflineStatus: (isOffline) => set({ isOffline }),
 }));
 ```
-
----
-
-## 5. Quy Chuẩn Trải Nghiệm Người Dùng (UX Checklist)
-
-1. **Phòng Ngừa Lỗi Vô Tình Tắt Trình Duyệt**:
-   - Gắn sự kiện `window.addEventListener('beforeunload')` khi thí sinh đang làm bài: Hiển thị cảnh báo *"Bạn đang trong phòng thi! Toàn bộ tiến độ đã được lưu ngầm nhưng đồng hồ vẫn tiếp tục đếm ngược. Bạn có chắc muốn rời đi?"*
-2. **Xử Lý Mất Mạng (Offline Resilience)**:
-   - Khi mất kết nối internet (`window.addEventListener('offline')`), giao diện hiển thị banner cảnh báo nhẹ màu cam: *"Đang offline. Dữ liệu đang được lưu tạm trên thiết bị."*
-   - Vẫn cho phép thí sinh gõ bài và chọn đáp án bình thường; toàn bộ payload được xếp vào hàng đợi `localStorage` và tự động gửi lên Server ngay khi có mạng trở lại.
-3. **Cảnh Báo Thời Gian Cuối**:
-   - Khi còn đúng **5 phút**: Đồng hồ đổi sang màu vàng cam và nhấp nháy nhẹ.
-   - Khi còn đúng **1 phút**: Đồng hồ đổi sang màu đỏ đậm và hiển thị toast thông báo: *"Chỉ còn 1 phút, hãy kiểm tra lại bài làm trước khi hệ thống tự động nộp!"*
