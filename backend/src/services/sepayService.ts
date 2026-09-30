@@ -82,6 +82,33 @@ export class SePayService {
     const match = text.match(/(OE\d{5,})/i);
     return match ? match[1].toUpperCase() : null;
   }
+
+  /**
+   * Tự động truy vấn SePay API kiểm tra xem giao dịch đã đến hay chưa (Fallback cho Webhook)
+   */
+  public async checkTransactionFromSePay(paymentCode: string, expectedAmount: number): Promise<any | null> {
+    if (!this.config.apiKey) return null;
+    try {
+      const res = await fetch('https://my.sepay.vn/userapi/transactions/list?limit=30', {
+        headers: {
+          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await res.json() as any;
+      if (data && data.transactions && Array.isArray(data.transactions)) {
+        const found = data.transactions.find((tx: any) => {
+          const content = (tx.transaction_content || tx.content || '').toUpperCase();
+          const amountIn = Number(tx.amount_in || tx.transferAmount || 0);
+          return content.includes(paymentCode.toUpperCase()) && amountIn >= expectedAmount;
+        });
+        return found || null;
+      }
+    } catch (err) {
+      console.error('[SePayService] Error checking transaction from SePay API:', err);
+    }
+    return null;
+  }
 }
 
 export const sepayService = new SePayService();

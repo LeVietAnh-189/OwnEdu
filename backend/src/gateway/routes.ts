@@ -1125,15 +1125,36 @@ apiRouter.get('/payment/orders', (_req, res) => {
 });
 
 // 4. Lấy chi tiết đơn hàng theo orderCode & kiểm tra trạng thái
-apiRouter.get('/payment/orders/:orderCode', (req, res) => {
+apiRouter.get('/payment/orders/:orderCode', async (req, res) => {
   const orderCode = parseInt(req.params.orderCode, 10);
   if (isNaN(orderCode)) {
     return errorResponse(res, 'E-PAY-003', 'Mã đơn hàng không hợp lệ.', 400);
   }
 
-  const order = db.getPaymentOrderByCode(orderCode);
+  let order = db.getPaymentOrderByCode(orderCode);
   if (!order) {
     return errorResponse(res, 'E-PAY-004', 'Không tìm thấy đơn hàng.', 404);
+  }
+
+  // Tự động kiểm tra trực tiếp qua SePay API nếu đơn hàng đang PENDING (Cơ chế Dual Check)
+  if (order.status === 'PENDING') {
+    try {
+      const matchedTx = await sepayService.checkTransactionFromSePay(order.paymentCode, order.amount);
+      if (matchedTx) {
+        const updated = db.updatePaymentOrderStatus(
+          order.orderCode,
+          'PAID',
+          matchedTx.transaction_date || new Date().toISOString(),
+          matchedTx
+        );
+        if (updated) {
+          order = updated;
+          console.log(`[Payment] Đơn hàng ${order.paymentCode} đã được kích hoạt thành công qua SePay API sync!`);
+        }
+      }
+    } catch (e) {
+      console.error('[Payment] Error auto-syncing SePay API:', e);
+    }
   }
 
   return successResponse(res, order);
