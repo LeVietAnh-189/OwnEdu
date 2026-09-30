@@ -29,7 +29,7 @@ export const DEFAULT_PAYMENT_PLANS: PaymentPlan[] = [
   {
     id: 'PRO_MONTHLY',
     name: 'Gói 1 Tháng',
-    price: 99000,
+    price: 2000,
     durationDays: 30,
     description: 'Trải nghiệm toàn diện các tính năng AI & Video chất lượng cao',
     features: [
