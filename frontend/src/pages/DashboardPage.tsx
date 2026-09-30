@@ -47,7 +47,7 @@ export const DashboardPage: React.FC = () => {
   };
 
   return (
-    <div className="w-full px-4 sm:px-8 lg:px-12 py-8 space-y-8">
+    <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Hero Banner (Light & Vibrant Red-Orange Gradient) */}
       <div className="relative rounded-3xl p-8 sm:p-10 overflow-hidden bg-gradient-to-r from-orange-600 via-rose-600 to-amber-600 shadow-xl border border-orange-500/20 text-white">
         <div className="absolute -right-10 -top-10 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />

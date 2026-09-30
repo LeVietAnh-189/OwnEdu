@@ -1,8 +1,20 @@
 # OwnEdu — Nền Tảng Khảo Thí & Đánh Giá Năng Lực Ứng Dụng AI
 
 Dự án OwnEdu bao gồm:
-- **Backend API Gateway & Microservices**: Node.js / Express + TypeScript (Chạy trực tiếp qua **Bun** trên cổng `3000`).
+- **Backend API Gateway & Microservices**: Node.js / Express + TypeScript (Chạy trực tiếp qua **Bun** trên cổng `3001`).
 - **Frontend Web**: React 18 + Vite + TailwindCSS (Chạy qua **Bun** trên cổng `5173`).
+
+---
+
+## 📚 Tài Liệu Kỹ Thuật & Kiến Trúc Dự Án
+
+Hệ thống tài liệu dự án được xây dựng và cập nhật đầy đủ tại:
+👉 **[Tài Liệu Tổng Quan Dự Án (docs/SUMMARY.md)](docs/SUMMARY.md)**
+
+- **[Architecture](docs/architecture/system-design.md)**: Thiết kế hệ thống, pipelines dữ liệu, luồng phát video streaming (R2 & YouTube).
+- **[Codebase](docs/codebase/directory-structure.md)**: Cấu trúc thư mục, chi tiết module Backend và Frontend.
+- **[Code Standard](docs/code-standard/conventions.md)**: Quy chuẩn lập trình TypeScript, chuẩn API Response, thiết lập môi trường.
+- **[Project PDR](docs/project-pdr/product-goals.md)**: Mục tiêu sản phẩm, ma trận nhận thức Bloom Taxonomy, quy tắc phân quyền Free & Pro.
 
 ---
 
@@ -17,7 +29,7 @@ bun run dev
 ```
 
 Hệ thống sẽ tự động:
-1. Chạy Backend tại [http://localhost:3000](http://localhost:3000) (kiểm tra trạng thái tại [http://localhost:3000/health](http://localhost:3000/health)).
+1. Chạy Backend tại [http://localhost:3001](http://localhost:3001) (kiểm tra trạng thái tại [http://localhost:3001/health](http://localhost:3001/health)).
 2. Chạy Frontend tại [http://localhost:5173](http://localhost:5173).
 3. Hợp nhất luồng log với tiền tố trực quan `[backend]` và `[frontend]`.
 4. Khi nhấn `Ctrl + C`, cả 2 dịch vụ sẽ được giải phóng an toàn, không gây kẹt cổng.

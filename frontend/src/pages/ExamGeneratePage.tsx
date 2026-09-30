@@ -11,7 +11,8 @@ import {
   Check, 
   AlertCircle,
   Cpu,
-  Key
+  Key,
+  ArrowLeft
 } from 'lucide-react';
 
 export const ExamGeneratePage: React.FC = () => {
@@ -107,13 +108,25 @@ export const ExamGeneratePage: React.FC = () => {
   ];
 
   return (
-    <div className="w-full px-4 sm:px-8 lg:px-12 py-10 space-y-8">
+    <div className="w-full max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* Back button */}
       <div>
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-          <Sparkles className="w-8 h-8 text-orange-600" />
+        <button
+          type="button"
+          onClick={() => navigate('/user?tab=my-documents')}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-orange-700 bg-white hover:bg-orange-50 border border-slate-200/90 shadow-xs transition-all cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Quay lại danh sách tài liệu</span>
+        </button>
+      </div>
+
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+          <Sparkles className="w-7 h-7 text-orange-600" />
           <span>Cấu Hình Sinh Đề Thi Bằng AI</span>
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
           Tài liệu nguồn: <strong className="text-slate-800">{document?.filename || 'Đang tải...'}</strong>
         </p>
       </div>

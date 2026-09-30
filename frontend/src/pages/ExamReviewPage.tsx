@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ExamAPI } from '../services/api';
 import { Exam, Question } from '../types';
 import { 
@@ -12,7 +12,8 @@ import {
   Check, 
   Play,
   Save,
-  CheckCircle2
+  CheckCircle2,
+  ArrowLeft
 } from 'lucide-react';
 
 export const ExamReviewPage: React.FC = () => {
@@ -99,7 +100,18 @@ export const ExamReviewPage: React.FC = () => {
   const isPublished = exam.status === 'PUBLISHED';
 
   return (
-    <div className="w-full px-4 sm:px-8 lg:px-12 py-10 space-y-8 text-slate-900">
+    <div className="w-full max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6 text-slate-900">
+      {/* Back button to Exam Bank */}
+      <div className="flex items-center justify-between">
+        <Link
+          to="/user?tab=my-exams"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-orange-700 bg-white hover:bg-orange-50 border border-slate-200/90 shadow-xs transition-all cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Quay lại ngân hàng đề thi</span>
+        </Link>
+      </div>
+
       {/* Header Bar */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>

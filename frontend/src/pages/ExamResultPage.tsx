@@ -96,15 +96,15 @@ export const ExamResultPage: React.FC = () => {
   const selectedEval = report.rubricEvaluations.find((e) => e.questionId === overrideQId);
 
   return (
-    <div className="w-full px-4 sm:px-8 lg:px-12 py-8 space-y-8">
+    <div className="w-full max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
         <Link
-          to="/"
+          to="/user?tab=my-exams"
           className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Về thư viện bài thi</span>
+          <span>Về ngân hàng đề thi</span>
         </Link>
       </div>
 

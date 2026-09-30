@@ -66,7 +66,7 @@ export interface DocumentItem {
   id: string;
   userId: string;
   filename: string;
-  fileType: 'pdf' | 'docx';
+  fileType: 'pdf' | 'docx' | 'md' | 'markdown';
   mimeType: string;
   fileSizeBytes: number;
   storagePath: string;
@@ -76,6 +76,8 @@ export interface DocumentItem {
   rawText?: string;
   totalWords?: number;
   chunksCount?: number;
+  parserEngine?: 'mineru' | 'pdf-parse' | 'mammoth' | 'direct-markdown';
+  markdownText?: string;
   createdAt: string;
 }
 
@@ -182,6 +184,31 @@ export interface Course {
   description: string;
   department: string;
   topic?: string;
+  isFreeTier?: boolean;
+  tierRequired?: UserTier;
+  documentIds?: string[];
+  videoIds?: string[];
+  createdAt: string;
+}
+
+export type VideoStatus = 'PROCESSING' | 'READY' | 'FAILED';
+
+export interface VideoItem {
+  id: string;
+  courseId?: string;
+  title: string;
+  filename: string;
+  originalSizeBytes: number;
+  compressedSizeBytes?: number;
+  durationSeconds?: number;
+  resolution?: string;
+  storageUrl: string;
+  thumbnailUrl?: string;
+  status: VideoStatus;
+  compressionRatio?: number;
+  sourceType?: 'UPLOAD' | 'YOUTUBE';
+  youtubeId?: string;
+  youtubeUrl?: string;
   createdAt: string;
 }
 

@@ -9,11 +9,11 @@ dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Enable CORS for frontend Vite development
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3001'],
   credentials: true,
 }));
 
@@ -39,7 +39,26 @@ app.get('/health', (req, res) => {
 // Mount API Gateway Router at /api/v1
 app.use('/api/v1', apiRouter);
 
+// Global error handling middleware (handles Multer errors, validation errors, etc.)
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[Backend Error]', err);
+  const status = typeof err.status === 'number' ? err.status : (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
+  let message = err.message || 'Đã xảy ra lỗi máy chủ nội bộ.';
+  if (err.code === 'LIMIT_FILE_SIZE' || err.message === 'File too large') {
+    const maxMb = process.env.MAX_VIDEO_SIZE_MB || '2048';
+    message = `Dung lượng tệp vượt quá giới hạn tối đa cho phép (${maxMb}MB / 2GB). Vui lòng chọn tệp nhỏ hơn hoặc nén lại trước khi tải lên.`;
+  }
+  res.status(status).json({
+    success: false,
+    error: {
+      code: err.code || 'E-SERVER-ERROR',
+      message,
+    },
+  });
+});
+
 // Start server
+
 app.listen(PORT, () => {
   console.log(`====================================================`);
   console.log(`🚀 OwnEdu Backend API Gateway running on port ${PORT}`);

@@ -98,3 +98,6 @@ __pycache__/
 *.pyo
 *.pyd
 *.whl
+
+# Cobrew
+cobrew/

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { DocumentItem, DocumentChunk, Exam, GradeReport, User, UserRole, UserTier, Course, AdminStats, TokenUsageLog } from '../types';
+import { DocumentItem, DocumentChunk, Exam, GradeReport, User, UserRole, UserTier, Course, VideoItem, AdminStats, TokenUsageLog } from '../types';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -38,6 +38,10 @@ export const DocumentAPI = {
 export const ExamAPI = {
   list: async () => {
     const res = await api.get<{ success: boolean; data: Exam[] }>('/exams');
+    return res.data.data;
+  },
+  delete: async (id: string) => {
+    const res = await api.delete<{ success: boolean; data: { deleted: boolean } }>(`/exams/${id}`);
     return res.data.data;
   },
   get: async (id: string) => {
@@ -136,28 +140,78 @@ export const AttemptAPI = {
   },
 };
 
+export interface SystemSettingsData {
+  activeModel: string;
+  geminiApiKey: string;
+  hasGeminiKey: boolean;
+  geminiApiKeyMasked: string;
+  openaiApiKey: string;
+  hasOpenAiKey: boolean;
+  r2AccountId: string;
+  r2AccessKeyId: string;
+  r2SecretAccessKey: string;
+  r2BucketName: string;
+  r2PublicDomain: string;
+  hasR2Config: boolean;
+}
+
 export const SettingsAPI = {
   get: async () => {
     const res = await api.get<{
       success: boolean;
-      data: {
-        activeModel: string;
-        hasGeminiKey: boolean;
-        geminiApiKeyMasked: string;
-        hasOpenAiKey: boolean;
-      };
+      data: SystemSettingsData;
     }>('/settings');
     return res.data.data;
   },
-  save: async (payload: { gemini_api_key?: string; openai_api_key?: string; active_model?: string }) => {
+  save: async (payload: {
+    gemini_api_key?: string;
+    openai_api_key?: string;
+    active_model?: string;
+    r2_account_id?: string;
+    r2_access_key_id?: string;
+    r2_secret_access_key?: string;
+    r2_bucket_name?: string;
+    r2_public_domain?: string;
+  }) => {
     const res = await api.post<{
       success: boolean;
       data: {
         activeModel: string;
         hasGeminiKey: boolean;
+        hasR2Config: boolean;
         message: string;
       };
     }>('/settings', payload);
+    return res.data.data;
+  },
+  testAI: async (payload?: { provider?: 'gemini' | 'openai'; apiKey?: string; model?: string }) => {
+    const res = await api.post<{
+      success: boolean;
+      data: {
+        connected: boolean;
+        provider: string;
+        model?: string;
+        latencyMs: number;
+        message: string;
+      };
+    }>('/settings/test-ai', payload || {});
+    return res.data.data;
+  },
+  testR2: async (payload?: {
+    accountId?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    bucketName?: string;
+  }) => {
+    const res = await api.post<{
+      success: boolean;
+      data: {
+        connected: boolean;
+        bucket: string;
+        latencyMs: number;
+        message: string;
+      };
+    }>('/settings/test-r2', payload || {});
     return res.data.data;
   },
 };
@@ -198,8 +252,22 @@ export const AdminAPI = {
     const res = await api.get<{ success: boolean; data: Course[] }>('/admin/courses');
     return res.data.data;
   },
-  createCourse: async (payload: { code: string; name: string; description?: string; department?: string; topic?: string }) => {
+  createCourse: async (payload: {
+    code: string;
+    name: string;
+    description?: string;
+    department?: string;
+    topic?: string;
+    isFreeTier?: boolean;
+    tierRequired?: 'FREE' | 'PRO';
+    documentIds?: string[];
+    videoIds?: string[];
+  }) => {
     const res = await api.post<{ success: boolean; data: Course }>('/admin/courses', payload);
+    return res.data.data;
+  },
+  updateCourse: async (id: string, payload: Partial<Course>) => {
+    const res = await api.put<{ success: boolean; data: Course }>(`/admin/courses/${id}`, payload);
     return res.data.data;
   },
   deleteCourse: async (id: string) => {
@@ -224,6 +292,44 @@ export const AdminAPI = {
         storage: { totalStorageBytes: number; totalStorageMB: string; documentCount: number };
       };
     }>('/admin/resources');
+    return res.data.data;
+  },
+};
+
+export const VideoAPI = {
+  list: async (courseId?: string) => {
+    const params = courseId ? { courseId } : {};
+    const res = await api.get<{ success: boolean; data: VideoItem[] }>('/videos', { params });
+    return res.data.data;
+  },
+  get: async (id: string) => {
+    const res = await api.get<{ success: boolean; data: VideoItem }>(`/videos/${id}`);
+    return res.data.data;
+  },
+  upload: async (file: File, title?: string, courseId?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (title) formData.append('title', title);
+    if (courseId) formData.append('courseId', courseId);
+
+    const res = await api.post<{ success: boolean; data: VideoItem }>('/videos/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data.data;
+  },
+  addYoutube: async (payload: { youtubeUrl: string; title?: string; courseId?: string }) => {
+    const res = await api.post<{ success: boolean; data: VideoItem }>('/videos/youtube', payload);
+    return res.data.data;
+  },
+  presign: async (filename: string, contentType?: string) => {
+    const res = await api.post<{
+      success: boolean;
+      data: { isR2Active: boolean; presignedUrl?: string; key?: string; message?: string };
+    }>('/videos/presign', { filename, contentType });
+    return res.data.data;
+  },
+  delete: async (id: string) => {
+    const res = await api.delete<{ success: boolean; data: { message: string } }>(`/videos/${id}`);
     return res.data.data;
   },
 };

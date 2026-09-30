@@ -17,7 +17,7 @@ const venvPython = path.resolve(mineruServiceDir, '.venv/Scripts/python.exe');
 export interface ParseResult {
   text: string;
   markdownText?: string;
-  parserEngine?: 'mineru' | 'pdf-parse' | 'mammoth';
+  parserEngine?: 'mineru' | 'pdf-parse' | 'mammoth' | 'direct-markdown';
   pageCount?: number;
   outline: Array<{ title: string; page?: number; level?: number }>;
   totalWords: number;
@@ -186,6 +186,40 @@ export async function parseDocxBuffer(buffer: Buffer): Promise<ParseResult> {
     parserEngine: 'mammoth',
     pageCount: estimatedPages,
     outline: outline.length > 0 ? outline : [{ title: 'Tài liệu giáo trình Word', page: 1, level: 1 }],
+    totalWords: words,
+  };
+}
+
+/**
+ * Direct native parser for Markdown (.md) documents
+ * Directly preserves markdown text without requiring MinerU or OCR conversion
+ */
+export function parseMarkdownBuffer(buffer: Buffer): ParseResult {
+  const content = buffer.toString('utf-8');
+  const lines = content.split('\n');
+  const outline: Array<{ title: string; page?: number; level?: number }> = [];
+
+  for (let i = 0; i < lines.length && outline.length < 30; i++) {
+    const line = lines[i].trim();
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      outline.push({
+        title: headingMatch[2].replace(/[*_`]/g, '').trim().slice(0, 100),
+        level: headingMatch[1].length,
+        page: 1
+      });
+    }
+  }
+
+  const words = content.trim().split(/\s+/).filter(Boolean).length;
+  const estimatedPages = Math.max(1, Math.ceil(words / 450));
+
+  return {
+    text: content,
+    markdownText: content,
+    parserEngine: 'direct-markdown',
+    pageCount: estimatedPages,
+    outline: outline.length > 0 ? outline : [{ title: 'Tài liệu Markdown nguồn', page: 1, level: 1 }],
     totalWords: words,
   };
 }

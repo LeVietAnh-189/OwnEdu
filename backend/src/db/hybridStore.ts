@@ -11,6 +11,7 @@ import {
   UserRole,
   Course,
   TokenUsageLog,
+  VideoItem,
   GenerationProgressEvent 
 } from '../types.js';
 
@@ -29,6 +30,7 @@ interface DatabaseSchema {
   gradeReports: GradeReport[];
   settings?: SystemSettings;
   courses?: Course[];
+  videos?: VideoItem[];
   tokenLogs?: TokenUsageLog[];
   activeUserId?: string;
 }
@@ -90,33 +92,8 @@ export class HybridStore {
             });
           }
         }
-        if (!parsed.courses || parsed.courses.length === 0) {
-          parsed.courses = [
-            {
-              id: 'crs_software_arch',
-              code: 'INT3306',
-              name: 'Kiến trúc Phần mềm & Microservices',
-              description: 'Thiết kế hệ thống phân tán, message broker và cloud architecture.',
-              department: 'Khoa Công nghệ Thông tin',
-              createdAt: new Date().toISOString()
-            },
-            {
-              id: 'crs_software_testing',
-              code: 'INT2204',
-              name: 'Đảm bảo Chất lượng & Kiểm thử Phần mềm',
-              description: 'Nghiệp vụ QA/QC, Unit test, Integration test và chuẩn ISO/IEC 25010.',
-              department: 'Khoa Công nghệ Thông tin',
-              createdAt: new Date().toISOString()
-            },
-            {
-              id: 'crs_db_management',
-              code: 'INT2207',
-              name: 'Cơ sở Dữ liệu & Hệ Phân tán',
-              description: 'Mô hình CSDL quan hệ SQL, NoSQL và tối ưu truy vấn.',
-              department: 'Khoa Công nghệ Thông tin',
-              createdAt: new Date().toISOString()
-            }
-          ];
+        if (!parsed.courses) {
+          parsed.courses = [];
         }
         if (!parsed.tokenLogs || parsed.tokenLogs.length === 0) {
           parsed.tokenLogs = [
@@ -370,6 +347,17 @@ export class HybridStore {
     return exam;
   }
 
+  public deleteExam(id: string): boolean {
+    const idx = this.data.exams.findIndex(e => e.id === id);
+    if (idx !== -1) {
+      this.data.exams.splice(idx, 1);
+      this.data.examAttempts = this.data.examAttempts.filter(a => a.examId !== id);
+      this.persist();
+      return true;
+    }
+    return false;
+  }
+
   public updateQuestion(examId: string, qId: string, updates: Partial<Question>): Question | undefined {
     const exam = this.getExamById(examId);
     if (exam) {
@@ -506,11 +494,24 @@ export class HybridStore {
     return this.data.courses || [];
   }
 
+  public getCourse(id: string): Course | null {
+    return (this.data.courses || []).find(c => c.id === id) || null;
+  }
+
   public addCourse(course: Course): Course {
     if (!this.data.courses) this.data.courses = [];
     this.data.courses.unshift(course);
     this.persist();
     return course;
+  }
+
+  public updateCourse(id: string, updates: Partial<Course>): Course | null {
+    if (!this.data.courses) return null;
+    const index = this.data.courses.findIndex(c => c.id === id);
+    if (index === -1) return null;
+    this.data.courses[index] = { ...this.data.courses[index], ...updates };
+    this.persist();
+    return this.data.courses[index];
   }
 
   public deleteCourse(id: string): boolean {
@@ -519,6 +520,39 @@ export class HybridStore {
     this.data.courses = this.data.courses.filter(c => c.id !== id);
     this.persist();
     return this.data.courses.length < initialLen;
+  }
+
+  // --- Video Materials Management ---
+  public getVideos(): VideoItem[] {
+    return this.data.videos || [];
+  }
+
+  public getVideo(id: string): VideoItem | null {
+    return (this.data.videos || []).find(v => v.id === id) || null;
+  }
+
+  public addVideo(video: VideoItem): VideoItem {
+    if (!this.data.videos) this.data.videos = [];
+    this.data.videos.unshift(video);
+    this.persist();
+    return video;
+  }
+
+  public updateVideo(id: string, updates: Partial<VideoItem>): VideoItem | null {
+    if (!this.data.videos) return null;
+    const index = this.data.videos.findIndex(v => v.id === id);
+    if (index === -1) return null;
+    this.data.videos[index] = { ...this.data.videos[index], ...updates };
+    this.persist();
+    return this.data.videos[index];
+  }
+
+  public deleteVideo(id: string): boolean {
+    if (!this.data.videos) return false;
+    const initialLen = this.data.videos.length;
+    this.data.videos = this.data.videos.filter(v => v.id !== id);
+    this.persist();
+    return this.data.videos.length < initialLen;
   }
 
   // --- Token Logs & Analytics (Admin) ---

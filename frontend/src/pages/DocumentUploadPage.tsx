@@ -26,12 +26,18 @@ export const DocumentUploadPage: React.FC = () => {
     const validTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/markdown',
+      'text/x-markdown',
+      'text/plain',
     ];
 
+    const name = selectedFile.name.toLowerCase();
     if (!validTypes.includes(selectedFile.type) && 
-        !selectedFile.name.endsWith('.pdf') && 
-        !selectedFile.name.endsWith('.docx')) {
-      setError('Định dạng tệp không được hỗ trợ. Vui lòng chỉ tải lên tệp .pdf hoặc .docx.');
+        !name.endsWith('.pdf') && 
+        !name.endsWith('.docx') &&
+        !name.endsWith('.md') &&
+        !name.endsWith('.markdown')) {
+      setError('Định dạng tệp không được hỗ trợ. Vui lòng tải lên tệp .pdf, .docx hoặc .md.');
       return;
     }
 
@@ -100,7 +106,7 @@ export const DocumentUploadPage: React.FC = () => {
             <input
               id="file-input"
               type="file"
-              accept=".pdf,.docx"
+              accept=".pdf,.docx,.md,.markdown,text/markdown,text/plain"
               className="hidden"
               onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
             />
@@ -114,7 +120,7 @@ export const DocumentUploadPage: React.FC = () => {
                 {file ? file.name : 'Kéo thả tệp vào đây, hoặc bấm để chọn tệp'}
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                Hỗ trợ tệp văn bản định dạng <strong className="text-slate-700">.PDF</strong> và <strong className="text-slate-700">.DOCX</strong> (Dung lượng tối đa 25MB)
+                Hỗ trợ tệp văn bản định dạng <strong className="text-slate-700">.PDF</strong>, <strong className="text-slate-700">.DOCX</strong> và <strong className="text-slate-700">.MD</strong> (Dung lượng tối đa 25MB)
               </p>
             </div>
 

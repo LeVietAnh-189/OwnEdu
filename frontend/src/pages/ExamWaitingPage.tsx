@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Sparkles, BrainCircuit, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -152,6 +152,15 @@ export const ExamWaitingPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <div className="pt-4">
+        <Link
+          to="/user?tab=my-documents"
+          className="text-xs font-semibold text-slate-400 hover:text-orange-600 transition inline-flex items-center gap-1"
+        >
+          <span>← Hủy hoặc quay lại danh sách tài liệu</span>
+        </Link>
+      </div>
     </div>
   );
 };

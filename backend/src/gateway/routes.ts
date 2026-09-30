@@ -4,23 +4,50 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import { db } from '../db/hybridStore.js';
-import { parsePdfBuffer, parseDocxBuffer, chunkText } from '../services/documentParser.js';
+import { parsePdfBuffer, parseDocxBuffer, parseMarkdownBuffer, chunkText } from '../services/documentParser.js';
 import { generateExamJob } from '../ai/examGenerator.js';
 import { gradeExamAttempt, overrideTeacherGrade } from '../services/gradingService.js';
 import { DocumentItem, ExamAttempt } from '../types.js';
+import { VideoService, reloadR2Config } from '../services/videoService.js';
 
 export const apiRouter = Router();
+const videoService = new VideoService(db);
 
 const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max per RULE-DOC-INGEST-001
   fileFilter: (_req, file, cb) => {
+    const name = file.originalname.toLowerCase();
     if (file.mimetype === 'application/pdf' || 
         file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-        file.originalname.endsWith('.pdf') ||
-        file.originalname.endsWith('.docx')) {
+        file.mimetype === 'text/markdown' ||
+        file.mimetype === 'text/x-markdown' ||
+        file.mimetype === 'text/plain' ||
+        name.endsWith('.pdf') ||
+        name.endsWith('.docx') ||
+        name.endsWith('.md') ||
+        name.endsWith('.markdown')) {
       cb(null, true);
     } else {
-      cb(new Error('Chỉ hỗ trợ tải lên tệp định dạng .pdf hoặc .docx'));
+      cb(new Error('Chỉ hỗ trợ tải lên tệp định dạng .pdf, .docx hoặc .md'));
+    }
+  }
+});
+
+const MAX_VIDEO_SIZE_MB = parseInt(process.env.MAX_VIDEO_SIZE_MB || '2048', 10);
+
+const videoUpload = multer({
+  dest: path.resolve(process.cwd(), 'uploads/temp'),
+  limits: { fileSize: MAX_VIDEO_SIZE_MB * 1024 * 1024 }, // Mặc định 2GB (2048MB) cho video bài giảng
+  fileFilter: (_req, file, cb) => {
+    const name = file.originalname.toLowerCase();
+    if (file.mimetype.startsWith('video/') ||
+        name.endsWith('.mp4') ||
+        name.endsWith('.webm') ||
+        name.endsWith('.mov') ||
+        name.endsWith('.mkv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Chỉ hỗ trợ tệp video định dạng .mp4, .webm, .mov hoặc .mkv'));
     }
   }
 });
@@ -134,12 +161,17 @@ apiRouter.post('/documents/upload', upload.single('file'), async (req: Request, 
 
     const docId = uuidv4();
     const currentUser = db.getCurrentUser();
-    const isPdf = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
+    const ext = path.extname(file.originalname).toLowerCase();
+    const isMd = ext === '.md' || ext === '.markdown' || file.mimetype === 'text/markdown' || file.mimetype === 'text/x-markdown';
+    const isPdf = ext === '.pdf' || file.mimetype === 'application/pdf';
 
     const cleanFilename = decodeFilename(file.originalname);
 
-    // Parse file contents
-    const parseResult = isPdf 
+    // Parse file contents:
+    // If it's already a markdown (.md) file, parse directly in-memory without MinerU or Mammoth!
+    const parseResult = isMd
+      ? parseMarkdownBuffer(file.buffer)
+      : isPdf 
       ? await parsePdfBuffer(file.buffer, cleanFilename)
       : await parseDocxBuffer(file.buffer);
 
@@ -154,7 +186,7 @@ apiRouter.post('/documents/upload', upload.single('file'), async (req: Request, 
       id: docId,
       userId: currentUser.id,
       filename: cleanFilename,
-      fileType: isPdf ? 'pdf' : 'docx',
+      fileType: isMd ? 'md' : (isPdf ? 'pdf' : 'docx'),
       mimeType: file.mimetype,
       fileSizeBytes: file.size,
       storagePath: `/uploads/${cleanFilename}`,
@@ -163,7 +195,7 @@ apiRouter.post('/documents/upload', upload.single('file'), async (req: Request, 
       extractedOutline: parseResult.outline,
       rawText: parseResult.text.slice(0, 1000), // Preview sample
       markdownText: parseResult.markdownText || parseResult.text,
-      parserEngine: parseResult.parserEngine || (isPdf ? 'pdf-parse' : 'mammoth'),
+      parserEngine: parseResult.parserEngine || (isMd ? 'direct-markdown' : (isPdf ? 'pdf-parse' : 'mammoth')),
       totalWords: parseResult.totalWords,
       chunksCount: chunks.length,
       createdAt: new Date().toISOString(),
@@ -293,6 +325,14 @@ apiRouter.post('/exams/:id/publish', (req, res) => {
     return errorResponse(res, 'E-EXAM-404', 'Không tìm thấy đề thi', 404);
   }
   return successResponse(res, exam);
+});
+
+apiRouter.delete('/exams/:id', (req, res) => {
+  const success = db.deleteExam(req.params.id);
+  if (!success) {
+    return errorResponse(res, 'E-EXAM-404', 'Không tìm thấy đề thi để xóa', 404);
+  }
+  return successResponse(res, { deleted: true });
 });
 
 // -------------------------------------------------------------
@@ -491,11 +531,26 @@ apiRouter.post('/attempts/:id/override-grade', (req, res) => {
 apiRouter.get('/settings', (req, res) => {
   const settings = db.getSettings();
   const effectiveGemini = settings.geminiApiKey || process.env.GEMINI_API_KEY || '';
+  const effectiveOpenAi = settings.openaiApiKey || process.env.OPENAI_API_KEY || '';
+
   return successResponse(res, {
-    activeModel: settings.activeModel || 'gemini-1.5-flash',
+    activeModel: settings.activeModel || 'gemini-2.5-flash',
+    geminiApiKey: effectiveGemini,
     hasGeminiKey: Boolean(effectiveGemini),
     geminiApiKeyMasked: effectiveGemini ? `${effectiveGemini.slice(0, 8)}...${effectiveGemini.slice(-4)}` : '',
-    hasOpenAiKey: Boolean(settings.openaiApiKey || process.env.OPENAI_API_KEY),
+    openaiApiKey: effectiveOpenAi,
+    hasOpenAiKey: Boolean(effectiveOpenAi),
+    // Cloudflare R2 Credentials & Config
+    r2AccountId: process.env.CLOUDFLARE_R2_ACCOUNT_ID || '',
+    r2AccessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
+    r2SecretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '',
+    r2BucketName: process.env.CLOUDFLARE_R2_BUCKET_NAME || 'ownedu-videos',
+    r2PublicDomain: process.env.CLOUDFLARE_R2_PUBLIC_DOMAIN || '',
+    hasR2Config: Boolean(
+      process.env.CLOUDFLARE_R2_ACCOUNT_ID &&
+      process.env.CLOUDFLARE_R2_ACCESS_KEY_ID &&
+      process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
+    )
   });
 });
 
@@ -505,17 +560,36 @@ apiRouter.post('/settings', (req, res) => {
   const isAdmin = roleHeader === 'ADMIN' || currentUser?.role === 'ADMIN' || process.env.NODE_ENV !== 'production';
 
   if (!isAdmin) {
-    return errorResponse(res, 'E-AUTH-403', 'Từ chối truy cập: Chỉ tài khoản Quản trị viên (ADMIN) mới có quyền cấu hình API Key và mô hình AI.', 403);
+    return errorResponse(res, 'E-AUTH-403', 'Từ chối truy cập: Chỉ tài khoản Quản trị viên (ADMIN) mới có quyền cấu hình hệ thống.', 403);
   }
 
-  const { gemini_api_key, openai_api_key, active_model } = req.body;
+  const {
+    gemini_api_key,
+    openai_api_key,
+    active_model,
+    r2_account_id,
+    r2_access_key_id,
+    r2_secret_access_key,
+    r2_bucket_name,
+    r2_public_domain
+  } = req.body;
+
   const updated = db.updateSettings({
     ...(gemini_api_key !== undefined && { geminiApiKey: gemini_api_key }),
     ...(openai_api_key !== undefined && { openaiApiKey: openai_api_key }),
     ...(active_model !== undefined && { activeModel: active_model }),
   });
 
-  // Automatically sync to .env file if key changed
+  // Update runtime process.env
+  if (gemini_api_key !== undefined) process.env.GEMINI_API_KEY = gemini_api_key;
+  if (openai_api_key !== undefined) process.env.OPENAI_API_KEY = openai_api_key;
+  if (r2_account_id !== undefined) process.env.CLOUDFLARE_R2_ACCOUNT_ID = r2_account_id;
+  if (r2_access_key_id !== undefined) process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = r2_access_key_id;
+  if (r2_secret_access_key !== undefined) process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = r2_secret_access_key;
+  if (r2_bucket_name !== undefined) process.env.CLOUDFLARE_R2_BUCKET_NAME = r2_bucket_name;
+  if (r2_public_domain !== undefined) process.env.CLOUDFLARE_R2_PUBLIC_DOMAIN = r2_public_domain;
+
+  // Sync to .env files
   try {
     const envPaths = [
       path.resolve(process.cwd(), '.env'),
@@ -524,20 +598,25 @@ apiRouter.post('/settings', (req, res) => {
     for (const envPath of envPaths) {
       if (fs.existsSync(envPath)) {
         let content = fs.readFileSync(envPath, 'utf8');
-        if (gemini_api_key !== undefined) {
-          if (/^GEMINI_API_KEY=.*$/m.test(content)) {
-            content = content.replace(/^GEMINI_API_KEY=.*$/m, `GEMINI_API_KEY=${gemini_api_key}`);
+
+        const updateEnvVar = (key: string, val: string | undefined) => {
+          if (val === undefined) return;
+          const regex = new RegExp(`^${key}=.*$`, 'm');
+          if (regex.test(content)) {
+            content = content.replace(regex, `${key}=${val}`);
           } else {
-            content += `\nGEMINI_API_KEY=${gemini_api_key}`;
+            content += `\n${key}=${val}`;
           }
-        }
-        if (openai_api_key !== undefined) {
-          if (/^OPENAI_API_KEY=.*$/m.test(content)) {
-            content = content.replace(/^OPENAI_API_KEY=.*$/m, `OPENAI_API_KEY=${openai_api_key}`);
-          } else {
-            content += `\nOPENAI_API_KEY=${openai_api_key}`;
-          }
-        }
+        };
+
+        updateEnvVar('GEMINI_API_KEY', gemini_api_key);
+        updateEnvVar('OPENAI_API_KEY', openai_api_key);
+        updateEnvVar('CLOUDFLARE_R2_ACCOUNT_ID', r2_account_id);
+        updateEnvVar('CLOUDFLARE_R2_ACCESS_KEY_ID', r2_access_key_id);
+        updateEnvVar('CLOUDFLARE_R2_SECRET_ACCESS_KEY', r2_secret_access_key);
+        updateEnvVar('CLOUDFLARE_R2_BUCKET_NAME', r2_bucket_name);
+        updateEnvVar('CLOUDFLARE_R2_PUBLIC_DOMAIN', r2_public_domain);
+
         fs.writeFileSync(envPath, content, 'utf8');
       }
     }
@@ -545,11 +624,128 @@ apiRouter.post('/settings', (req, res) => {
     console.warn('[Settings] Could not sync .env file:', err.message);
   }
 
+  // Reload R2 client with new credentials
+  reloadR2Config();
+
   return successResponse(res, {
     activeModel: updated.activeModel,
     hasGeminiKey: Boolean(updated.geminiApiKey || process.env.GEMINI_API_KEY),
-    message: 'Đã lưu cấu hình AI thành công và đồng bộ vào .env!',
+    hasR2Config: Boolean(
+      process.env.CLOUDFLARE_R2_ACCOUNT_ID &&
+      process.env.CLOUDFLARE_R2_ACCESS_KEY_ID &&
+      process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
+    ),
+    message: 'Đã lưu cấu hình hệ thống thành công và tự động đồng bộ vào tệp .env!',
   });
+});
+
+/**
+ * Kiểm tra kết nối API Key AI (Google Gemini hoặc OpenAI)
+ */
+apiRouter.post('/settings/test-ai', async (req, res) => {
+  const { provider = 'gemini', apiKey, model } = req.body;
+  const keyToTest = apiKey || (provider === 'gemini' ? (db.getSettings().geminiApiKey || process.env.GEMINI_API_KEY) : (db.getSettings().openaiApiKey || process.env.OPENAI_API_KEY));
+  
+  if (!keyToTest) {
+    return errorResponse(res, 'E-KEY-MISSING', `Chưa cung cấp ${provider === 'gemini' ? 'Google Gemini' : 'OpenAI'} API Key. Vui lòng nhập khóa API trước khi kiểm tra.`, 400);
+  }
+
+  const startTime = Date.now();
+  try {
+    if (provider === 'gemini') {
+      const currentActive = db.getSettings().activeModel;
+      const testModel = model || (currentActive && currentActive !== 'offline-smart' ? currentActive : 'gemini-3.5-flash');
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${testModel}:generateContent?key=${keyToTest}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Ping test. Reply with one word: PONG' }] }]
+        })
+      });
+      const latencyMs = Date.now() - startTime;
+      if (!response.ok) {
+        const errData = (await response.json().catch(() => ({}))) as any;
+        const errMsg = errData?.error?.message || response.statusText;
+        return errorResponse(res, 'E-AI-CONN-FAILED', `Google Gemini từ chối kết nối (Mã lỗi ${response.status}): ${errMsg}`, 400);
+      }
+      return successResponse(res, {
+        connected: true,
+        provider: 'Google Gemini',
+        model: testModel,
+        latencyMs,
+        message: `Kết nối Google Gemini thành công! (Mô hình: ${testModel}, Độ trễ: ${latencyMs}ms)`
+      });
+    } else {
+      const response = await fetch('https://api.openai.com/v1/models', {
+        headers: { 'Authorization': `Bearer ${keyToTest}` }
+      });
+      const latencyMs = Date.now() - startTime;
+      if (!response.ok) {
+        const errData = (await response.json().catch(() => ({}))) as any;
+        const errMsg = errData?.error?.message || response.statusText;
+        return errorResponse(res, 'E-AI-CONN-FAILED', `OpenAI từ chối kết nối (Mã lỗi ${response.status}): ${errMsg}`, 400);
+      }
+      return successResponse(res, {
+        connected: true,
+        provider: 'OpenAI',
+        latencyMs,
+        message: `Kết nối OpenAI API thành công! (Độ trễ: ${latencyMs}ms)`
+      });
+    }
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    return errorResponse(res, 'E-AI-CONN-ERROR', `Không thể kết nối đến máy chủ AI (${latencyMs}ms): ${err.message}`, 500);
+  }
+});
+
+/**
+ * Kiểm tra kết nối Cloudflare R2 Credentials
+ */
+apiRouter.post('/settings/test-r2', async (req, res) => {
+  const {
+    accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID,
+    accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
+    secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+    bucketName = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'ownedu-videos'
+  } = req.body;
+
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    return errorResponse(res, 'E-R2-KEY-MISSING', 'Vui lòng điền đủ Account ID, Access Key ID và Secret Access Key của Cloudflare R2.', 400);
+  }
+
+  const startTime = Date.now();
+  try {
+    const { S3Client, HeadBucketCommand } = await import('@aws-sdk/client-s3');
+    const testClient = new S3Client({
+      region: 'auto',
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId,
+        secretAccessKey
+      }
+    });
+
+    await testClient.send(new HeadBucketCommand({ Bucket: bucketName }));
+    const latencyMs = Date.now() - startTime;
+
+    return successResponse(res, {
+      connected: true,
+      bucket: bucketName,
+      latencyMs,
+      message: `Kết nối Cloudflare R2 thành công! Bucket "${bucketName}" tồn tại và sẵn sàng lưu trữ (Độ trễ: ${latencyMs}ms).`
+    });
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    const statusCode = err.$metadata?.httpStatusCode;
+    let msg = err.message;
+    if (statusCode === 404) {
+      msg = `Bucket "${bucketName}" không tồn tại trên tài khoản Cloudflare R2 này.`;
+    } else if (statusCode === 403) {
+      msg = 'Sai Access Key hoặc Secret Access Key, hoặc Token không có quyền truy cập Bucket này.';
+    }
+    return errorResponse(res, 'E-R2-CONN-FAILED', `Lỗi kết nối Cloudflare R2 (${latencyMs}ms): ${msg}`, 400);
+  }
 });
 
 // -------------------------------------------------------------
@@ -566,10 +762,15 @@ apiRouter.get('/admin/courses', (req, res) => {
 });
 
 apiRouter.post('/admin/courses', (req, res) => {
-  const { code, name, description, department, topic } = req.body;
+  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds } = req.body;
   if (!code || !name) {
     return errorResponse(res, 'E-CRS-001', 'Mã môn học và tên môn học là bắt buộc.', 400);
   }
+  const isFree = isFreeTier !== false && tierRequired !== 'PRO';
+  const tier = isFree ? 'FREE' : 'PRO';
+  const docIds = Array.isArray(documentIds) ? documentIds.map((id: any) => String(id).trim()).filter(Boolean) : [];
+  const vIds = Array.isArray(videoIds) ? videoIds.map((id: any) => String(id).trim()).filter(Boolean) : [];
+
   const newCourse = db.addCourse({
     id: `crs_${uuidv4().slice(0, 8)}`,
     code: code.trim().toUpperCase(),
@@ -577,9 +778,44 @@ apiRouter.post('/admin/courses', (req, res) => {
     description: (description || '').trim(),
     department: (department || 'Khoa Công nghệ Thông tin').trim(),
     topic: (topic || 'Lập trình').trim(),
+    isFreeTier: isFree,
+    tierRequired: tier,
+    documentIds: docIds,
+    videoIds: vIds,
     createdAt: new Date().toISOString()
   });
   return successResponse(res, newCourse, 201);
+});
+
+apiRouter.put('/admin/courses/:id', (req, res) => {
+  const { id } = req.params;
+  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds } = req.body;
+
+  const existing = db.getCourse(id);
+  if (!existing) {
+    return errorResponse(res, 'E-CRS-002', 'Không tìm thấy khóa học cần cập nhật.', 404);
+  }
+
+  const updates: Partial<typeof existing> = {};
+  if (code !== undefined) updates.code = String(code).trim().toUpperCase();
+  if (name !== undefined) updates.name = String(name).trim();
+  if (description !== undefined) updates.description = String(description).trim();
+  if (department !== undefined) updates.department = String(department).trim();
+  if (topic !== undefined) updates.topic = String(topic).trim();
+  if (isFreeTier !== undefined || tierRequired !== undefined) {
+    const isFree = isFreeTier !== false && tierRequired !== 'PRO';
+    updates.isFreeTier = isFree;
+    updates.tierRequired = isFree ? 'FREE' : 'PRO';
+  }
+  if (documentIds !== undefined && Array.isArray(documentIds)) {
+    updates.documentIds = documentIds.map((d: any) => String(d).trim()).filter(Boolean);
+  }
+  if (videoIds !== undefined && Array.isArray(videoIds)) {
+    updates.videoIds = videoIds.map((v: any) => String(v).trim()).filter(Boolean);
+  }
+
+  const updated = db.updateCourse(id, updates);
+  return successResponse(res, updated);
 });
 
 apiRouter.delete('/admin/courses/:id', (req, res) => {
@@ -616,5 +852,183 @@ apiRouter.get('/admin/resources', (req, res) => {
       documentCount: documents.length
     }
   });
+});
+
+// ==========================================
+// VIDEO LECTURES & MULTIMEDIA ENDPOINTS
+// ==========================================
+
+// 1. Danh sách video (hỗ trợ lọc ?courseId=...)
+apiRouter.get('/videos', (req, res) => {
+  const { courseId } = req.query;
+  let videos = db.getVideos();
+  if (courseId) {
+    videos = videos.filter(v => v.courseId === String(courseId));
+  }
+  return successResponse(res, videos);
+});
+
+// 2. Chi tiết 1 video & trạng thái nén
+apiRouter.get('/videos/:id', (req, res) => {
+  const { id } = req.params;
+  const video = db.getVideo(id);
+  if (!video) {
+    return errorResponse(res, 'E-VID-001', 'Không tìm thấy video.', 404);
+  }
+  return successResponse(res, video);
+});
+
+// 3. Tải lên video trực tiếp qua Backend & Chạy nén ngầm FFmpeg
+apiRouter.post('/videos/upload', videoUpload.single('file'), async (req, res) => {
+  const file = req.file;
+  if (!file) {
+    return errorResponse(res, 'E-VID-002', 'Vui lòng đính kèm tệp video để tải lên.', 400);
+  }
+
+  const { title, courseId } = req.body;
+  const videoId = `vid_${uuidv4().slice(0, 8)}`;
+  const originalFilename = decodeFilename(file.originalname);
+
+  // Kích hoạt pipeline xử lý ngầm (Asynchronous Worker Job)
+  videoService.processUploadedVideo(
+    videoId,
+    file.path,
+    originalFilename,
+    title,
+    courseId
+  );
+
+  const initialItem = db.getVideo(videoId);
+  return successResponse(res, initialItem, 202);
+});
+
+// 3b. Gắn link video YouTube (Không tốn lưu trữ R2, tối ưu cho khóa học Free)
+apiRouter.post('/videos/youtube', async (req, res) => {
+  const { youtubeUrl, title, courseId } = req.body;
+  if (!youtubeUrl || typeof youtubeUrl !== 'string') {
+    return errorResponse(res, 'E-VID-YT-001', 'Vui lòng cung cấp đường dẫn video YouTube hợp lệ.', 400);
+  }
+
+  const youtubeId = videoService.extractYoutubeId(youtubeUrl);
+  if (!youtubeId) {
+    return errorResponse(res, 'E-VID-YT-002', 'Đường dẫn YouTube không đúng định dạng (ví dụ: https://www.youtube.com/watch?v=... hoặc https://youtu.be/...).', 400);
+  }
+
+  const videoId = `yt_${youtubeId}_${uuidv4().slice(0, 4)}`;
+  const videoItem = videoService.createYoutubeVideo(videoId, youtubeUrl, title, courseId);
+  if (!videoItem) {
+    return errorResponse(res, 'E-VID-YT-003', 'Không thể tạo bản ghi video YouTube.', 500);
+  }
+
+  return successResponse(res, videoItem, 201);
+});
+
+// 4. Lấy Presigned URL để Direct-to-Cloud Upload lên Cloudflare R2 (giống Bloomfit)
+apiRouter.post('/videos/presign', async (req, res) => {
+  const { filename, contentType } = req.body;
+  if (!filename) {
+    return errorResponse(res, 'E-VID-003', 'Tên tệp là bắt buộc.', 400);
+  }
+
+  const presignData = await videoService.getPresignedUploadUrl(filename, contentType);
+  if (!presignData) {
+    return successResponse(res, {
+      isR2Active: false,
+      message: 'Cloudflare R2 chưa được cấu hình. Hệ thống sẽ tự động dùng API tải trực tiếp (/api/v1/videos/upload).'
+    });
+  }
+
+  return successResponse(res, {
+    isR2Active: true,
+    presignedUrl: presignData.presignedUrl,
+    key: presignData.key
+  });
+});
+
+// 5. Stream video cục bộ hỗ trợ chuẩn HTTP Range Request (RFC 7233)
+apiRouter.get('/videos/:id/stream', (req, res) => {
+  const { id } = req.params;
+  const video = db.getVideo(id);
+  if (!video) {
+    return res.status(404).send('Video không tồn tại.');
+  }
+
+  // Nếu storageUrl là link CDN/R2 ngoài (https://...), redirect thẳng đến CDN
+  if (video.storageUrl.startsWith('http://') || video.storageUrl.startsWith('https://')) {
+    return res.redirect(video.storageUrl);
+  }
+
+  const videoPath = videoService.getLocalVideoPath(id);
+  if (!fs.existsSync(videoPath)) {
+    return res.status(404).send('Tệp video chưa sẵn sàng hoặc đang trong quá trình nén.');
+  }
+
+  const stat = fs.statSync(videoPath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunksize = (end - start) + 1;
+    const file = fs.createReadStream(videoPath, { start, end });
+    const head = {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunksize,
+      'Content-Type': 'video/mp4',
+    };
+    res.writeHead(206, head);
+    file.pipe(res);
+  } else {
+    const head = {
+      'Content-Length': fileSize,
+      'Content-Type': 'video/mp4',
+      'Accept-Ranges': 'bytes',
+    };
+    res.writeHead(200, head);
+    fs.createReadStream(videoPath).pipe(res);
+  }
+});
+
+// 6. Phục vụ Thumbnail của video
+apiRouter.get('/videos/:id/thumbnail', (req, res) => {
+  const { id } = req.params;
+  const thumbPath = videoService.getLocalThumbnailPath(id);
+  if (!fs.existsSync(thumbPath)) {
+    return res.status(404).send('Không tìm thấy thumbnail.');
+  }
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  fs.createReadStream(thumbPath).pipe(res);
+});
+
+// 7. Xóa video
+apiRouter.delete('/videos/:id', (req, res) => {
+  const { id } = req.params;
+  const video = db.getVideo(id);
+  if (!video) {
+    return errorResponse(res, 'E-VID-004', 'Không tìm thấy video để xóa.', 404);
+  }
+
+  // Xóa file local nếu có
+  const localVid = videoService.getLocalVideoPath(id);
+  const localThumb = videoService.getLocalThumbnailPath(id);
+  try { if (fs.existsSync(localVid)) fs.unlinkSync(localVid); } catch {}
+  try { if (fs.existsSync(localThumb)) fs.unlinkSync(localThumb); } catch {}
+
+  // Gỡ khỏi khóa học nếu có
+  if (video.courseId) {
+    const course = db.getCourse(video.courseId);
+    if (course && course.videoIds) {
+      db.updateCourse(video.courseId, {
+        videoIds: course.videoIds.filter(vId => vId !== id)
+      });
+    }
+  }
+
+  db.deleteVideo(id);
+  return successResponse(res, { message: 'Đã xóa video thành công.' });
 });
 

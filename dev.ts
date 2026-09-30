@@ -14,7 +14,7 @@ const bold = (text: string) => `\x1b[1m${text}\x1b[0m`;
 console.log(bold(green("\n===========================================================")));
 console.log(bold(green("   🎓 OWNEDU — Khởi chạy hệ thống toàn diện bằng Bun")));
 console.log(bold(green("===========================================================")));
-console.log(`📡 ${cyan("Backend API:")}   http://localhost:3000 (Health: http://localhost:3000/health)`);
+console.log(`📡 ${cyan("Backend API:")}   http://localhost:3001 (Health: http://localhost:3001/health)`);
 console.log(`🖥️ ${magenta("Frontend Web:")}  http://localhost:5173`);
 console.log(yellow("Nhấn Ctrl+C để dừng toàn bộ hệ thống bất kỳ lúc nào.\n"));
 
@@ -35,7 +35,7 @@ backendProcess = spawn("bun", ["run", "dev"], {
   cwd: backendDir,
   shell: true,
   stdio: ["inherit", "pipe", "pipe"],
-  env: { ...process.env, PORT: "3000" }
+  env: { ...process.env, PORT: "3001" }
 });
 
 const backendPrefix = cyan("[backend]");
