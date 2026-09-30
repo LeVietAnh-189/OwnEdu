@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { AdminAPI, DocumentAPI, ExamAPI } from '../../services/api';
 import { useUserStore } from '../../store/userStore';
+import { ProUpgradeModal } from '../payment/ProUpgradeModal';
 
 export type UserTabKey = 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'profile';
 
@@ -36,6 +37,7 @@ export const UserLayout: React.FC = () => {
   const { currentUser, switchRole, isLoading: isUserLoading, fetchCurrentUser } = useUserStore();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState<boolean>(false);
   const [counts, setCounts] = useState<{ courses: number; documents: number; exams: number }>({
     courses: 0,
     documents: 0,
@@ -279,25 +281,33 @@ export const UserLayout: React.FC = () => {
       </div>
 
       {/* Bottom Card: Membership Widget */}
-      <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50/60 border border-orange-200/80 space-y-2.5">
+      <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50/60 border border-emerald-200/80 space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Crown className="w-4 h-4 text-orange-600" />
-            <span className="text-xs font-black text-orange-950">Gói Pro Sinh Viên</span>
+            <Crown className="w-4 h-4 text-emerald-600" />
+            <span className="text-xs font-black text-emerald-950">
+              {currentUser?.tier === 'PRO' ? 'Gói Pro VIP Sinh Viên' : 'Tài Khoản Miễn Phí'}
+            </span>
           </div>
-          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full border border-emerald-200">
-            Đang kích hoạt
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+            currentUser?.tier === 'PRO' 
+              ? 'bg-emerald-100 text-emerald-700 border-emerald-200' 
+              : 'bg-slate-100 text-slate-600 border-slate-200'
+          }`}>
+            {currentUser?.tier === 'PRO' ? 'Đang kích hoạt' : 'Hạn chế 3 đề/ngày'}
           </span>
         </div>
         <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
-          Không giới hạn bóc tách tài liệu & sinh bộ đề thi chuẩn Bloom Taxonomy AI.
+          {currentUser?.tier === 'PRO'
+            ? 'Không giới hạn bóc tách tài liệu & sinh bộ đề thi chuẩn Bloom Taxonomy AI.'
+            : 'Nâng cấp ngay qua VietQR để mở khóa không giới hạn AI & bài giảng Video R2.'}
         </p>
-        <Link
-          to="/user?tab=profile"
-          className="block w-full py-1.5 text-center text-xs font-bold text-orange-700 hover:text-orange-800 bg-white/80 hover:bg-white rounded-xl border border-orange-200 shadow-xs transition"
+        <button
+          onClick={() => setIsUpgradeModalOpen(true)}
+          className="w-full py-1.5 text-center text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-white/80 hover:bg-white rounded-xl border border-emerald-200 shadow-xs transition cursor-pointer"
         >
-          Xem chi tiết quyền lợi
-        </Link>
+          {currentUser?.tier === 'PRO' ? 'Xem chi tiết & Gia hạn' : 'Nâng cấp Pro VIP ngay'}
+        </button>
       </div>
     </div>
   );
@@ -361,6 +371,26 @@ export const UserLayout: React.FC = () => {
               {isAdmin ? 'ADMIN' : 'USER'}
             </strong>
           </button>
+
+          {/* Pro VIP Upgrade CTA Button */}
+          {currentUser?.tier !== 'PRO' ? (
+            <button
+              onClick={() => setIsUpgradeModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs hover:shadow-md hover:from-amber-600 hover:to-orange-600 transition-all cursor-pointer active:scale-95"
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-100" />
+              <span>Nâng cấp Pro</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsUpgradeModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
+              title="Gói Pro VIP đang hoạt động - Nhấp để xem hạn dùng hoặc gia hạn"
+            >
+              <Crown className="w-3.5 h-3.5 text-emerald-600" />
+              <span>PRO VIP</span>
+            </button>
+          )}
 
           {/* User Profile Pill */}
           <Link
@@ -427,6 +457,13 @@ export const UserLayout: React.FC = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* Pro VIP Upgrade Modal (SePay VietQR) */}
+      <ProUpgradeModal 
+        isOpen={isUpgradeModalOpen} 
+        onClose={() => setIsUpgradeModalOpen(false)} 
+        onSuccess={() => fetchCurrentUser()} 
+      />
     </div>
   );
 };

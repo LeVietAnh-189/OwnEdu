@@ -12,7 +12,11 @@ import {
   Course,
   TokenUsageLog,
   VideoItem,
-  GenerationProgressEvent 
+  GenerationProgressEvent,
+  PaymentOrder,
+  PaymentPlan,
+  PaymentPlanId,
+  PaymentOrderStatus
 } from '../types.js';
 
 export interface SystemSettings {
@@ -20,6 +24,52 @@ export interface SystemSettings {
   openaiApiKey?: string;
   activeModel: 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'gpt-4o-mini' | 'offline-smart';
 }
+
+export const DEFAULT_PAYMENT_PLANS: PaymentPlan[] = [
+  {
+    id: 'PRO_MONTHLY',
+    name: 'Gói 1 Tháng',
+    price: 99000,
+    durationDays: 30,
+    description: 'Trải nghiệm toàn diện các tính năng AI & Video chất lượng cao',
+    features: [
+      'Tạo đề thi AI không giới hạn từ tài liệu giáo trình',
+      'Chấm điểm tự luận Rubric chi tiết 4 tiêu chí',
+      'Xem video bài giảng Cloudflare R2 Streaming độ nét cao',
+      'Tải tài liệu, giáo trình đính kèm (.pdf, .docx)',
+      'Huy hiệu Pro VIP nổi bật'
+    ]
+  },
+  {
+    id: 'PRO_QUARTERLY',
+    name: 'Gói 3 Tháng (Tiết kiệm 15%)',
+    price: 249000,
+    durationDays: 90,
+    description: 'Lựa chọn lý tưởng theo học kỳ dành cho sinh viên',
+    features: [
+      'Tất cả quyền lợi của Gói 1 Tháng',
+      'Tiết kiệm 48.000 VNĐ so với mua lẻ từng tháng',
+      'Ưu tiên tốc độ xử lý khi bóc tách giáo trình',
+      'Không giới hạn dung lượng lưu trữ tài liệu',
+      'Chứng chỉ hoàn thành khóa học có mã QR xác thực'
+    ],
+    isPopular: true
+  },
+  {
+    id: 'PRO_YEARLY',
+    name: 'Gói 1 Năm (Siêu Tiết Kiệm)',
+    price: 799000,
+    durationDays: 365,
+    description: 'Đồng hành cả năm học với chi phí tiết kiệm hơn 33%',
+    features: [
+      'Tất cả quyền lợi của Gói 3 Tháng',
+      'Tiết kiệm gần 400.000 VNĐ / năm',
+      'Truy cập sớm các mô hình AI mới nhất',
+      'Đặc quyền tải toàn bộ tài nguyên đồ án & giáo trình',
+      'Hỗ trợ kỹ thuật 1-1 từ đội ngũ giảng viên'
+    ]
+  }
+];
 
 interface DatabaseSchema {
   users: User[];
@@ -32,6 +82,7 @@ interface DatabaseSchema {
   courses?: Course[];
   videos?: VideoItem[];
   tokenLogs?: TokenUsageLog[];
+  paymentOrders?: PaymentOrder[];
   activeUserId?: string;
 }
 
@@ -127,6 +178,9 @@ export class HybridStore {
             openaiApiKey: process.env.OPENAI_API_KEY || '',
             activeModel: (process.env.GEMINI_API_KEY ? 'gemini-1.5-flash' : 'offline-smart') as any
           };
+        }
+        if (!parsed.paymentOrders) {
+          parsed.paymentOrders = [];
         }
         return parsed;
       }
@@ -256,6 +310,7 @@ export class HybridStore {
     if (updates.fullName !== undefined) user.fullName = updates.fullName;
     if (updates.email !== undefined) user.email = updates.email;
     if (updates.code !== undefined) user.code = updates.code;
+    if (updates.proExpiresAt !== undefined) user.proExpiresAt = updates.proExpiresAt;
     this.persist();
     return user;
   }
@@ -272,6 +327,87 @@ export class HybridStore {
     this.persist();
     return this.data.users.length < initLen;
   }
+
+  // --- Payment & Pro VIP Orders (SePay VietQR) ---
+  public getPaymentPlans(): PaymentPlan[] {
+    return DEFAULT_PAYMENT_PLANS;
+  }
+
+  public getPaymentPlan(planId: PaymentPlanId): PaymentPlan | undefined {
+    return DEFAULT_PAYMENT_PLANS.find(p => p.id === planId);
+  }
+
+  public getPaymentOrders(userId?: string): PaymentOrder[] {
+    if (!this.data.paymentOrders) {
+      this.data.paymentOrders = [];
+    }
+    if (userId) {
+      return this.data.paymentOrders.filter(o => o.userId === userId);
+    }
+    return this.data.paymentOrders;
+  }
+
+  public getPaymentOrderByCode(orderCode: number): PaymentOrder | undefined {
+    if (!this.data.paymentOrders) return undefined;
+    return this.data.paymentOrders.find(o => o.orderCode === orderCode);
+  }
+
+  public getPaymentOrderByPaymentCode(paymentCode: string): PaymentOrder | undefined {
+    if (!this.data.paymentOrders) return undefined;
+    const clean = paymentCode.toUpperCase().trim();
+    return this.data.paymentOrders.find(o => o.paymentCode.toUpperCase() === clean);
+  }
+
+  public createPaymentOrder(order: PaymentOrder): PaymentOrder {
+    if (!this.data.paymentOrders) {
+      this.data.paymentOrders = [];
+    }
+    this.data.paymentOrders.unshift(order);
+    this.persist();
+    return order;
+  }
+
+  public updatePaymentOrderStatus(
+    orderCode: number, 
+    status: PaymentOrderStatus, 
+    paidAt?: string, 
+    rawWebhookData?: any
+  ): PaymentOrder | undefined {
+    if (!this.data.paymentOrders) return undefined;
+    const order = this.data.paymentOrders.find(o => o.orderCode === orderCode);
+    if (!order) return undefined;
+
+    order.status = status;
+    if (paidAt) order.paidAt = paidAt;
+    if (rawWebhookData) order.rawWebhookData = rawWebhookData;
+
+    // Tự động nâng cấp tài khoản nếu thanh toán thành công
+    if (status === 'PAID') {
+      const plan = this.getPaymentPlan(order.planId);
+      const days = plan ? plan.durationDays : 30;
+      this.upgradeUserToPro(order.userId, days);
+    }
+
+    this.persist();
+    return order;
+  }
+
+  public upgradeUserToPro(userId: string, durationDays: number = 30): User | undefined {
+    const user = this.data.users.find(u => u.id === userId);
+    if (!user) return undefined;
+
+    user.tier = 'PRO';
+    const now = new Date();
+    let currentExpiry = user.proExpiresAt ? new Date(user.proExpiresAt) : null;
+    let baseDate = (currentExpiry && currentExpiry.getTime() > now.getTime()) ? currentExpiry : now;
+    
+    const newExpiry = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    user.proExpiresAt = newExpiry.toISOString();
+
+    this.persist();
+    return user;
+  }
+
 
   // --- Documents ---
   public getDocuments(userId?: string): DocumentItem[] {

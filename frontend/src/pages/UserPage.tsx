@@ -31,11 +31,17 @@ import {
   Lock,
   Video,
   Film,
-  Youtube
+  Youtube,
+  CreditCard,
+  Receipt,
+  QrCode,
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
-import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI } from '../services/api';
-import { Course, DocumentItem, Exam, VideoItem } from '../types';
+import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, PaymentAPI } from '../services/api';
+import { Course, DocumentItem, Exam, VideoItem, PaymentOrder } from '../types';
 import { useUserStore } from '../store/userStore';
+import { ProUpgradeModal } from '../components/payment/ProUpgradeModal';
 
 export const USER_COURSE_TOPICS = [
   { id: 'ALL', name: 'Tất cả chủ đề', icon: Layers },
@@ -48,7 +54,7 @@ export const USER_COURSE_TOPICS = [
 export const UserPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { currentUser } = useUserStore();
+  const { currentUser, fetchCurrentUser } = useUserStore();
 
   const activeTabParam = searchParams.get('tab') as 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'profile' | null;
   const activeTab = activeTabParam || 'courses';
@@ -67,6 +73,21 @@ export const UserPage: React.FC = () => {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Payment & Pro states
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState<boolean>(false);
+  const [orders, setOrders] = useState<PaymentOrder[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (activeTab === 'profile') {
+      setIsLoadingOrders(true);
+      PaymentAPI.getOrders()
+        .then(res => setOrders(res || []))
+        .catch(() => setOrders([]))
+        .finally(() => setIsLoadingOrders(false));
+    }
+  }, [activeTab]);
 
   // Course Classroom & Active Lesson state
   const courseIdParam = searchParams.get('courseId');
@@ -1151,7 +1172,7 @@ export const UserPage: React.FC = () => {
       )}
 
       {/* ======================================================== */}
-      {/* TAB 5: THÔNG TIN CÁ NHÂN */}
+      {/* TAB 5: THÔNG TIN CÁ NHÂN & GÓI PRO */}
       {/* ======================================================== */}
       {activeTab === 'profile' && (
         <div className="space-y-6 w-full">
@@ -1169,12 +1190,18 @@ export const UserPage: React.FC = () => {
                   {currentUser?.fullName || 'Học viên'}
                 </h2>
                 <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-orange-50 text-orange-800 border border-orange-200">
-                  Mã: OE-8821
+                  ID: {currentUser?.id || 'OE-USER'}
                 </span>
                 <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   Trực tuyến
                 </span>
+                {currentUser?.tier === 'PRO' && (
+                  <span className="px-2.5 py-0.5 text-xs font-extrabold rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs flex items-center gap-1">
+                    <Crown className="w-3.5 h-3.5 text-amber-200" />
+                    PRO VIP
+                  </span>
+                )}
               </div>
 
               <p className="text-xs text-slate-500 flex items-center justify-center sm:justify-start gap-1.5">
@@ -1184,7 +1211,7 @@ export const UserPage: React.FC = () => {
 
               <p className="text-xs text-slate-500 flex items-center justify-center sm:justify-start gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Tham gia hệ thống từ tháng 01/2026</span>
+                <span>Vai trò: <strong className="text-slate-700 uppercase">{currentUser?.role || 'STUDENT'}</strong></span>
               </p>
             </div>
           </div>
@@ -1193,45 +1220,185 @@ export const UserPage: React.FC = () => {
           <div className="p-6 rounded-3xl bg-gradient-to-br from-orange-50 via-white to-amber-50 border border-orange-200/90 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-orange-600 text-white flex items-center justify-center shadow-md shadow-orange-600/25">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md ${
+                  currentUser?.tier === 'PRO'
+                    ? 'bg-gradient-to-tr from-amber-500 to-orange-600 text-white shadow-orange-600/25'
+                    : 'bg-slate-100 text-slate-600'
+                }`}>
                   <Crown className="w-6 h-6 text-amber-300" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="text-lg font-black text-slate-900">Gói Tài Khoản: Gói PRO</h4>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      Active
+                    <h4 className="text-lg font-black text-slate-900">
+                      Gói Tài Khoản: {currentUser?.tier === 'PRO' ? 'Gói PRO VIP' : 'Gói Miễn Phí (Standard)'}
+                    </h4>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                      currentUser?.tier === 'PRO'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {currentUser?.tier === 'PRO' ? 'Đang hoạt động' : 'Hạn chế quyền lợi'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">Thời hạn sử dụng: Vĩnh viễn (Tài khoản thử nghiệm)</p>
+                  <p className="text-xs text-slate-500">
+                    {currentUser?.tier === 'PRO' ? (
+                      currentUser?.proExpiresAt ? (
+                        <>Hạn sử dụng: <strong className="text-orange-700 font-bold">{new Date(currentUser.proExpiresAt).toLocaleDateString('vi-VN')}</strong></>
+                      ) : (
+                        'Thời hạn sử dụng: Vĩnh viễn (Tài khoản thử nghiệm)'
+                      )
+                    ) : (
+                      'Chỉ sinh được tối đa 3 đề thi/ngày. Nâng cấp ngay để mở khóa toàn bộ tính năng AI.'
+                    )}
+                  </p>
                 </div>
               </div>
 
               <button
-                onClick={() => alert('Gói Pro của bạn đang hoạt động đầy đủ quyền lợi!')}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-white text-orange-700 border border-orange-200 hover:bg-orange-50 shadow-xs transition"
+                onClick={() => setIsUpgradeModalOpen(true)}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-orange-600/20 hover:from-amber-600 hover:to-orange-700 transition cursor-pointer flex items-center gap-2"
               >
-                Quản lý gói học
+                <Crown className="w-4 h-4 text-amber-200" />
+                <span>{currentUser?.tier === 'PRO' ? 'Gia hạn gói Pro VIP' : 'Nâng cấp Pro VIP ngay'}</span>
               </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
               <div className="p-3.5 rounded-xl bg-white/80 border border-orange-100 space-y-1">
                 <span className="text-[11px] font-bold text-slate-500 uppercase">Bóc tách giáo trình</span>
-                <p className="text-sm font-black text-slate-900">Không giới hạn</p>
+                <p className="text-sm font-black text-slate-900">
+                  {currentUser?.tier === 'PRO' ? 'Không giới hạn dung lượng' : 'Tối đa 10MB / file'}
+                </p>
               </div>
               <div className="p-3.5 rounded-xl bg-white/80 border border-orange-100 space-y-1">
                 <span className="text-[11px] font-bold text-slate-500 uppercase">Khảo thí AI Bloom</span>
-                <p className="text-sm font-black text-slate-900">4 Cấp độ nhận thức</p>
+                <p className="text-sm font-black text-slate-900">
+                  {currentUser?.tier === 'PRO' ? 'Không giới hạn 4 cấp độ' : 'Tối đa 3 đề thi / ngày'}
+                </p>
               </div>
               <div className="p-3.5 rounded-xl bg-white/80 border border-orange-100 space-y-1">
-                <span className="text-[11px] font-bold text-slate-500 uppercase">Chấm tự luận Rubric</span>
-                <p className="text-sm font-black text-slate-900">Chi tiết theo tiêu chí</p>
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Chấm tự luận Rubric AI</span>
+                <p className="text-sm font-black text-slate-900">
+                  {currentUser?.tier === 'PRO' ? 'Phân tích đa chiều chuyên sâu' : 'Nhận xét cơ bản'}
+                </p>
               </div>
             </div>
           </div>
+
+          {/* Transaction History Section (SePay VietQR) */}
+          <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-slate-900">Lịch Sử Giao Dịch Nâng Cấp (SePay VietQR)</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsLoadingOrders(true);
+                  PaymentAPI.getOrders()
+                    .then(res => setOrders(res || []))
+                    .catch(() => setOrders([]))
+                    .finally(() => setIsLoadingOrders(false));
+                }}
+                className="text-xs font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
+              >
+                Làm mới
+              </button>
+            </div>
+
+            {isLoadingOrders ? (
+              <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+                <span>Đang tải lịch sử giao dịch...</span>
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <CreditCard className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p>Bạn chưa có giao dịch thanh toán nào.</p>
+                <button
+                  onClick={() => setIsUpgradeModalOpen(true)}
+                  className="mt-3 px-4 py-1.5 rounded-xl text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition cursor-pointer"
+                >
+                  Nâng cấp Pro ngay
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4">Mã đơn</th>
+                      <th className="py-3 px-4">Nội dung CK</th>
+                      <th className="py-3 px-4">Gói dịch vụ</th>
+                      <th className="py-3 px-4">Số tiền</th>
+                      <th className="py-3 px-4">Phương thức</th>
+                      <th className="py-3 px-4">Trạng thái</th>
+                      <th className="py-3 px-4">Thời gian</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {orders.map((o) => (
+                      <tr key={o.id} className="hover:bg-slate-50/70 transition">
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                          {o.orderCode}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-mono font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                            {o.paymentCode || `OE${o.orderCode}`}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-700">
+                          {o.description || (o.planId === 'PRO_MONTHLY' ? 'Gói 1 Tháng' : o.planId === 'PRO_QUARTERLY' ? 'Gói 3 Tháng' : 'Gói 1 Năm')}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          {o.amount.toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+                            <QrCode className="w-3.5 h-3.5 text-orange-600" />
+                            VietQR (SePay)
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {o.status === 'PAID' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Thành công
+                            </span>
+                          ) : o.status === 'PENDING' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              Chờ chuyển khoản
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                              <X className="w-3 h-3" />
+                              Đã hủy
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-slate-400">
+                          {new Date(o.createdAt).toLocaleString('vi-VN')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      {/* Pro VIP Upgrade Modal (SePay VietQR) */}
+      <ProUpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={() => setIsUpgradeModalOpen(false)}
+        onSuccess={() => {
+          fetchCurrentUser();
+          PaymentAPI.getOrders().then(res => setOrders(res || [])).catch(() => {});
+        }}
+      />
     </div>
   );
 };
