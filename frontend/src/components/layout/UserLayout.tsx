@@ -14,7 +14,6 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import { AdminAPI, DocumentAPI, ExamAPI } from '../../services/api';
 import { useUserStore } from '../../store/userStore';
 
 export type UserTabKey = 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'profile';
@@ -25,7 +24,6 @@ interface MenuItem {
   description: string;
   icon: React.ComponentType<{ className?: string }>;
   path: string;
-  countKey?: 'courses' | 'documents' | 'exams';
   badge?: string;
 }
 
@@ -36,31 +34,9 @@ export const UserLayout: React.FC = () => {
   const { currentUser, switchRole, isLoading: isUserLoading, fetchCurrentUser } = useUserStore();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
-  const [counts, setCounts] = useState<{ courses: number; documents: number; exams: number }>({
-    courses: 0,
-    documents: 0,
-    exams: 0,
-  });
 
   useEffect(() => {
     fetchCurrentUser();
-    const fetchCounts = async () => {
-      try {
-        const [cList, dList, eList] = await Promise.all([
-          AdminAPI.getCourses().catch(() => []),
-          DocumentAPI.list().catch(() => []),
-          ExamAPI.list().catch(() => [])
-        ]);
-        setCounts({
-          courses: cList.length,
-          documents: dList.length,
-          exams: eList.length,
-        });
-      } catch (err) {
-        console.error('Failed to load counts in layout:', err);
-      }
-    };
-    fetchCounts();
   }, []);
 
   // Close mobile drawer on route change
@@ -103,7 +79,6 @@ export const UserLayout: React.FC = () => {
       description: 'Khám phá danh mục môn học',
       icon: BookOpen,
       path: '/user?tab=courses',
-      countKey: 'courses',
     },
     {
       id: 'my-courses',
@@ -111,7 +86,6 @@ export const UserLayout: React.FC = () => {
       description: 'Tiến độ học tập & chứng chỉ',
       icon: GraduationCap,
       path: '/user?tab=my-courses',
-      countKey: undefined,
     },
     {
       id: 'my-documents',
@@ -119,7 +93,6 @@ export const UserLayout: React.FC = () => {
       description: 'Kho giáo trình & bóc tách PDF',
       icon: FileText,
       path: '/user?tab=my-documents',
-      countKey: 'documents',
     },
     {
       id: 'my-exams',
@@ -127,7 +100,6 @@ export const UserLayout: React.FC = () => {
       description: 'Ngân hàng câu hỏi & làm bài thi',
       icon: Layers,
       path: '/user?tab=my-exams',
-      countKey: 'exams',
     },
     {
       id: 'profile',
@@ -226,7 +198,6 @@ export const UserLayout: React.FC = () => {
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
-            const countVal = item.countKey ? counts[item.countKey] : (item.id === 'my-courses' ? 3 : undefined);
 
             return (
               <Link
@@ -234,8 +205,8 @@ export const UserLayout: React.FC = () => {
                 to={item.path}
                 className={`w-full group text-left flex items-center justify-between p-3 rounded-2xl transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-orange-50/90 text-orange-950 font-bold border border-orange-200/80 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
+                    ? 'bg-orange-50/90 text-orange-900 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -256,22 +227,14 @@ export const UserLayout: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="shrink-0 ml-2">
-                  {countVal !== undefined && countVal > 0 && (
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                      isActive ? 'bg-orange-200/80 text-orange-900' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {countVal}
-                    </span>
-                  )}
-
-                  {item.badge && (
+                {item.badge && (
+                  <div className="shrink-0 ml-2">
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                       <Crown className="w-3 h-3 text-amber-500" />
                       {item.badge}
                     </span>
-                  )}
-                </div>
+                  </div>
+                )}
               </Link>
             );
           })}
@@ -279,7 +242,7 @@ export const UserLayout: React.FC = () => {
       </div>
 
       {/* Bottom Card: Membership Widget */}
-      <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50/60 border border-orange-200/80 space-y-2.5">
+      <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-50/70 to-amber-50/40 border border-orange-100 space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Crown className="w-4 h-4 text-orange-600" />
