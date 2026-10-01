@@ -972,8 +972,8 @@ export const AdminPage: React.FC = () => {
                       onClick={() => setActiveTab(item.id)}
                       className={`w-full group text-left flex items-center justify-between p-3 rounded-2xl transition-all cursor-pointer ${
                         isActive
-                          ? 'bg-orange-50/90 text-orange-900 font-bold border border-orange-100/80 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
+                          ? 'bg-orange-50/90 text-orange-900 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -1030,7 +1030,7 @@ export const AdminPage: React.FC = () => {
               {/* -------------------------------------------------------- */}
               {/* ROW 1: THANH TÌM KIẾM (CENTER/LEFT) & THÊM KHÓA HỌC (RIGHT) */}
               {/* -------------------------------------------------------- */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 {/* Thanh tìm kiếm */}
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1039,12 +1039,12 @@ export const AdminPage: React.FC = () => {
                     placeholder="Tìm kiếm khóa học theo tên môn học, mã môn (vd: PROG101, ENG101, DCK101, GIT101)..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium shadow-2xs"
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1057,7 +1057,7 @@ export const AdminPage: React.FC = () => {
                     setCourseTopic(selectedTopic === 'ALL' ? 'Lập trình' : selectedTopic);
                     setShowAddCourse(!showAddCourse);
                   }}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white transition-all shadow-md shadow-orange-600/20 shrink-0 cursor-pointer active:scale-[0.98]"
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white transition-all shadow-sm shadow-orange-600/20 shrink-0 cursor-pointer active:scale-[0.98]"
                 >
                   <Plus className="w-4 h-4" />
                   <span>{showAddCourse ? 'Đóng Biểu Mẫu' : 'Thêm khóa học'}</span>
@@ -1067,36 +1067,34 @@ export const AdminPage: React.FC = () => {
               {/* -------------------------------------------------------- */}
               {/* ROW 2: 4 CHỦ ĐỀ WIREFRAME: Lập trình | Tiếng Anh | Docker | Git & Github */}
               {/* -------------------------------------------------------- */}
-              <div className="bg-white p-2 rounded-2xl border border-slate-200/90 shadow-xs">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {COURSE_TOPICS.map((topic) => {
-                    const Icon = topic.icon;
-                    const isSelected = selectedTopic === topic.id;
-                    const count = topicCounts[topic.id] || 0;
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                {COURSE_TOPICS.map((topic) => {
+                  const Icon = topic.icon;
+                  const isSelected = selectedTopic === topic.id;
+                  const count = topicCounts[topic.id] || 0;
 
-                    return (
-                      <button
-                        key={topic.id}
-                        onClick={() => setSelectedTopic(topic.id)}
-                        className={`flex items-center justify-between px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
-                            : 'bg-slate-50 text-slate-700 hover:bg-orange-50/60 hover:text-orange-700 border border-slate-100'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <Icon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-orange-600'}`} />
-                          <span className="truncate">{topic.name}</span>
-                        </div>
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ml-2 shrink-0 ${
-                          isSelected ? 'bg-orange-700 text-white' : 'bg-slate-200/80 text-slate-600'
-                        }`}>
-                          {count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                  return (
+                    <button
+                      key={topic.id}
+                      onClick={() => setSelectedTopic(topic.id)}
+                      className={`flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/20'
+                          : 'bg-white text-slate-700 hover:bg-slate-50 hover:text-orange-600 border border-slate-200/80 shadow-2xs'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Icon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-orange-600'}`} />
+                        <span className="truncate">{topic.name}</span>
+                      </div>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ml-2 shrink-0 ${
+                        isSelected ? 'bg-orange-700 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* 2-STEP COURSE CREATION WIZARD */}
@@ -2178,7 +2176,7 @@ export const AdminPage: React.FC = () => {
             <div className="space-y-2 w-full">
               
               {/* Action Toolbar: Search & Add Account */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 {/* Search input */}
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -2187,12 +2185,12 @@ export const AdminPage: React.FC = () => {
                     placeholder="Tìm kiếm tài khoản theo mã (OE-0001...), tên tài khoản hoặc email..."
                     value={userSearchQuery}
                     onChange={(e) => setUserSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium shadow-2xs"
                   />
                   {userSearchQuery && (
                     <button
                       onClick={() => setUserSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -2204,7 +2202,7 @@ export const AdminPage: React.FC = () => {
                   <select
                     value={userRoleFilter}
                     onChange={(e) => setUserRoleFilter(e.target.value as any)}
-                    className="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 font-bold focus:bg-white focus:outline-none focus:border-orange-500 cursor-pointer"
+                    className="px-3 py-2.5 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-700 font-bold focus:outline-none focus:border-orange-500 cursor-pointer shadow-2xs"
                   >
                     <option value="ALL">Tất cả vai trò</option>
                     <option value="USER">User (Học viên)</option>
@@ -2214,7 +2212,7 @@ export const AdminPage: React.FC = () => {
                   <select
                     value={userTierFilter}
                     onChange={(e) => setUserTierFilter(e.target.value as any)}
-                    className="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 font-bold focus:bg-white focus:outline-none focus:border-orange-500 cursor-pointer"
+                    className="px-3 py-2.5 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-700 font-bold focus:outline-none focus:border-orange-500 cursor-pointer shadow-2xs"
                   >
                     <option value="ALL">Tất cả gói</option>
                     <option value="FREE">Gói Free</option>
@@ -2223,7 +2221,7 @@ export const AdminPage: React.FC = () => {
 
                   <button
                     onClick={() => setShowAddUser(!showAddUser)}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white transition-all shadow-md shadow-orange-600/20 shrink-0 cursor-pointer active:scale-[0.98]"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white transition-all shadow-sm shadow-orange-600/20 shrink-0 cursor-pointer active:scale-[0.98]"
                   >
                     <UserPlus className="w-4 h-4" />
                     <span>{showAddUser ? 'Đóng Biểu Mẫu' : 'Thêm tài khoản'}</span>

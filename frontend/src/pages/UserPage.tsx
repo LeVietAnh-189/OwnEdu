@@ -590,36 +590,33 @@ export const UserPage: React.FC = () => {
             })()}
           </div>
         ) : (
-          <div className="space-y-4 w-full">
-            {/* Top Row: Search & Filters */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Tìm kiếm môn học theo tên, chủ đề đào tạo..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+          <div className="space-y-6 w-full">
+            {/* Top Controls: Search & Topic Filter (Liền mạch, không đóng hộp rườm rà) */}
+            <div className="space-y-3.5">
+              {/* Row 1: Search Input */}
+              <div className="flex items-center">
+                <div className="relative w-full max-w-2xl">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm môn học theo tên, chủ đề đào tạo..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 shadow-2xs transition-all font-medium"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="text-xs text-slate-500 font-medium px-2">
-                Tìm thấy <strong className="text-slate-900 font-bold">{filteredCourses.length}</strong> môn học
-              </div>
-            </div>
-
-            {/* Topic Selector Pills */}
-            <div className="bg-white p-2.5 rounded-2xl border border-slate-200/90 shadow-xs">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {/* Row 2: Topic Filter Pills (Trực tiếp, không bọc trong box viền lớn) */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
                 {USER_COURSE_TOPICS.map((topic) => {
                   const Icon = topic.icon;
                   const isSelected = selectedTopic === topic.id;
@@ -627,14 +624,14 @@ export const UserPage: React.FC = () => {
                     <button
                       key={topic.id}
                       onClick={() => setSelectedTopic(topic.id)}
-                      className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
                         isSelected
-                          ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
-                          : 'bg-slate-50 text-slate-700 hover:bg-orange-50 hover:text-orange-700 border border-slate-100'
+                          ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/25'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80 shadow-2xs'
                       }`}
                     >
-                      <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-orange-600'}`} />
-                      <span className="truncate">{topic.name}</span>
+                      <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-orange-500'}`} />
+                      <span className="whitespace-nowrap">{topic.name}</span>
                     </button>
                   );
                 })}
@@ -656,8 +653,6 @@ export const UserPage: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {filteredCourses.map((c) => {
                   const isProTier = c.isFreeTier === false || c.tierRequired === 'PRO';
-                  const docCount = c.documentIds ? c.documentIds.length : 0;
-                  const videoCount = c.videoIds ? c.videoIds.length : 0;
                   const isUserPro = currentUser?.tier === 'PRO';
                   const canAccess = !isProTier || isUserPro;
 
@@ -694,20 +689,6 @@ export const UserPage: React.FC = () => {
                         <p className="text-xs text-slate-500 line-clamp-2 font-normal leading-relaxed">
                           {c.description || 'Chương trình đào tạo chuẩn khảo thí với ngân hàng câu hỏi Bloom Taxonomy & chấm AI.'}
                         </p>
-
-                        {/* Attached Document & Video counts */}
-                        <div className="flex items-center gap-3 text-xs text-slate-500 pt-1 flex-wrap">
-                          <div className="flex items-center gap-1 text-slate-600">
-                            <BookOpen className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                            <span>{docCount > 0 ? `${docCount} tài liệu` : 'Chưa có tài liệu'}</span>
-                          </div>
-                          {videoCount > 0 && (
-                            <div className="flex items-center gap-1 text-indigo-600 font-semibold">
-                              <Video className="w-3.5 h-3.5 shrink-0" />
-                              <span>{videoCount} video bài giảng</span>
-                            </div>
-                          )}
-                        </div>
                       </div>
 
                       <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
@@ -896,13 +877,20 @@ export const UserPage: React.FC = () => {
             </div>
           )}
 
-          {/* Header Action Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-orange-600" />
-              <h3 className="text-base font-bold text-slate-900">
-                Kho Giáo Trình & Tài Liệu Bóc Tách (PDF, DOCX, Markdown)
-              </h3>
+          {/* Header Action Bar (Liền mạch, không đóng hộp rườm rà) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 py-1">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Kho Giáo Trình & Tài Liệu Bóc Tách
+                </h3>
+                <p className="text-xs text-slate-500 font-normal">
+                  Hỗ trợ định dạng PDF, DOCX và Markdown
+                </p>
+              </div>
             </div>
 
             <button
@@ -1047,15 +1035,17 @@ export const UserPage: React.FC = () => {
       {/* ======================================================== */}
       {activeTab === 'my-exams' && (
         <div className="space-y-6 w-full">
-          {/* Header Action Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
-            <div className="flex items-center gap-2">
-              <Layers className="w-5 h-5 text-orange-600" />
+          {/* Header Action Bar (Liền mạch, không đóng hộp rườm rà) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 py-1">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
                   Ngân Hàng Đề Thi & Khảo Thí AI Bloom
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500 font-normal">
                   Tổng hợp các bộ đề thi đã sinh bằng AI từ tài liệu giáo trình
                 </p>
               </div>
