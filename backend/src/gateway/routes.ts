@@ -7,8 +7,9 @@ import { db } from '../db/hybridStore.js';
 import { parsePdfBuffer, parseDocxBuffer, parseMarkdownBuffer, chunkText } from '../services/documentParser.js';
 import { generateExamJob } from '../ai/examGenerator.js';
 import { gradeExamAttempt, overrideTeacherGrade } from '../services/gradingService.js';
-import { DocumentItem, ExamAttempt } from '../types.js';
+import { DocumentItem, ExamAttempt, PaymentPlanId, PaymentOrder } from '../types.js';
 import { VideoService, reloadR2Config } from '../services/videoService.js';
+import { sepayService, SePayWebhookPayload } from '../services/sepayService.js';
 
 export const apiRouter = Router();
 const videoService = new VideoService(db);
@@ -1031,4 +1032,232 @@ apiRouter.delete('/videos/:id', (req, res) => {
   db.deleteVideo(id);
   return successResponse(res, { message: 'Đã xóa video thành công.' });
 });
+
+// -------------------------------------------------------------
+// PAYMENT & PRO VIP (SePay VietQR) ENDPOINTS
+// -------------------------------------------------------------
+
+// 1. Lấy danh sách các gói cước Pro VIP & cấu hình SePay
+apiRouter.get('/payment/plans', (_req, res) => {
+  const plans = db.getPaymentPlans();
+  const sepayConfig = sepayService.getConfig();
+  return successResponse(res, {
+    plans,
+    bankInfo: {
+      bankName: sepayConfig.bankName,
+      accountNumber: sepayConfig.accountNumber,
+      accountName: sepayConfig.accountName,
+      isConfigured: sepayService.isConfigured()
+    }
+  });
+});
+
+// 2. Tạo đơn hàng thanh toán & sinh mã VietQR SePay
+apiRouter.post('/payment/create', async (req, res) => {
+  try {
+    const { planId } = req.body as { planId: PaymentPlanId };
+
+    if (!planId) {
+      return errorResponse(res, 'E-PAY-001', 'Vui lòng chọn gói cước cần nâng cấp.', 400);
+    }
+
+    const plan = db.getPaymentPlan(planId);
+    if (!plan) {
+      return errorResponse(res, 'E-PAY-002', 'Gói cước không tồn tại trong hệ thống.', 404);
+    }
+
+    const currentUser = db.getCurrentUser();
+    const sepayConfig = sepayService.getConfig();
+
+    // Sinh mã đơn hàng số nguyên 6 chữ số ngẫu nhiên
+    const randomSuffix = Math.floor(100000 + Math.random() * 900000);
+    const orderCode = randomSuffix;
+    const paymentCode = `OE${orderCode}`; // Chuỗi ngắn gọn tối ưu cho SMS ngân hàng: e.g. "OE892014"
+
+    const description = `Thanh toan ${plan.name} ${paymentCode}`;
+
+    // Sinh ảnh mã QR SePay VietQR
+    const qrCodeUrl = sepayService.generateQrUrl({
+      amount: plan.price,
+      paymentCode
+    });
+
+    const newOrder: PaymentOrder = {
+      id: `ord_${uuidv4().slice(0, 8)}`,
+      orderCode,
+      paymentCode,
+      userId: currentUser.id,
+      userEmail: currentUser.email,
+      planId: plan.id,
+      amount: plan.price,
+      status: 'PENDING',
+      description,
+      qrCode: qrCodeUrl,
+      accountName: sepayConfig.accountName,
+      accountNumber: sepayConfig.accountNumber,
+      bankName: sepayConfig.bankName,
+      createdAt: new Date().toISOString()
+    };
+
+    db.createPaymentOrder(newOrder);
+
+    return successResponse(res, {
+      order: newOrder,
+      bankInfo: {
+        bankName: sepayConfig.bankName,
+        accountNumber: sepayConfig.accountNumber,
+        accountName: sepayConfig.accountName,
+        amount: plan.price,
+        paymentCode
+      }
+    }, 201);
+  } catch (err: any) {
+    console.error('[Payment API] Lỗi khi tạo đơn hàng SePay:', err);
+    return errorResponse(res, 'E-PAY-500', err?.message || 'Không thể tạo đơn hàng thanh toán.', 500);
+  }
+});
+
+// 3. Lấy lịch sử giao dịch đơn hàng của học viên hiện tại
+apiRouter.get('/payment/orders', (_req, res) => {
+  const currentUser = db.getCurrentUser();
+  const orders = db.getPaymentOrders(currentUser.id);
+  return successResponse(res, orders);
+});
+
+// 4. Lấy chi tiết đơn hàng theo orderCode & kiểm tra trạng thái
+apiRouter.get('/payment/orders/:orderCode', async (req, res) => {
+  const orderCode = parseInt(req.params.orderCode, 10);
+  if (isNaN(orderCode)) {
+    return errorResponse(res, 'E-PAY-003', 'Mã đơn hàng không hợp lệ.', 400);
+  }
+
+  let order = db.getPaymentOrderByCode(orderCode);
+  if (!order) {
+    return errorResponse(res, 'E-PAY-004', 'Không tìm thấy đơn hàng.', 404);
+  }
+
+  // Tự động kiểm tra trực tiếp qua SePay API nếu đơn hàng đang PENDING (Cơ chế Dual Check)
+  if (order.status === 'PENDING') {
+    try {
+      const matchedTx = await sepayService.checkTransactionFromSePay(order.paymentCode, order.amount);
+      if (matchedTx) {
+        const updated = db.updatePaymentOrderStatus(
+          order.orderCode,
+          'PAID',
+          matchedTx.transaction_date || new Date().toISOString(),
+          matchedTx
+        );
+        if (updated) {
+          order = updated;
+          console.log(`[Payment] Đơn hàng ${order.paymentCode} đã được kích hoạt thành công qua SePay API sync!`);
+        }
+      }
+    } catch (e) {
+      console.error('[Payment] Error auto-syncing SePay API:', e);
+    }
+  }
+
+  return successResponse(res, order);
+});
+
+// 5. Webhook tiếp nhận biến động số dư từ SePay
+apiRouter.post('/payment/sepay-webhook', (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'] as string | undefined;
+    if (!sepayService.verifyWebhookAuthorization(authHeader)) {
+      console.warn('[SePay Webhook] Chữ ký xác thực API Key không hợp lệ.');
+      return res.status(401).json({ success: false, message: 'Unauthorized SePay Webhook' });
+    }
+
+    const payload: SePayWebhookPayload = req.body;
+    console.log('[SePay Webhook] Nhận tín hiệu biến động số dư:', JSON.stringify(payload));
+
+    // Bóc tách nội dung chuyển khoản để tìm mã đơn hàng (e.g. OE123456)
+    const transferText = `${payload.content || ''} ${payload.description || ''}`;
+    const paymentCode = sepayService.extractPaymentCode(transferText);
+
+    if (!paymentCode) {
+      console.log('[SePay Webhook] Không tìm thấy mã đơn hàng dạng OE... trong nội dung CK:', transferText);
+      return res.status(200).json({ success: true, message: 'Đã nhận webhook (không có mã OE tương ứng).' });
+    }
+
+    const order = db.getPaymentOrderByPaymentCode(paymentCode);
+    if (!order) {
+      console.log(`[SePay Webhook] Không tìm thấy đơn hàng cho mã: ${paymentCode}`);
+      return res.status(200).json({ success: true, message: `Không tìm thấy đơn hàng cho mã ${paymentCode}.` });
+    }
+
+    // Kiểm tra là giao dịch tiền vào (transferType = "in") và số tiền nhận >= số tiền đơn hàng
+    const transferType = (payload.transferType || 'in').toLowerCase();
+    const transferAmount = Number(payload.transferAmount || 0);
+
+    if (transferType === 'in' && transferAmount >= order.amount) {
+      if (order.status !== 'PAID') {
+        db.updatePaymentOrderStatus(
+          order.orderCode,
+          'PAID',
+          payload.transactionDate || new Date().toISOString(),
+          payload
+        );
+        console.log(`[SePay Webhook] Đơn hàng #${order.orderCode} (${order.paymentCode}) đã thanh toán thành công ${transferAmount}đ! Đã nâng cấp Pro VIP cho User ${order.userId}.`);
+      }
+    } else {
+      console.warn(`[SePay Webhook] Giao dịch không hợp lệ hoặc thiếu tiền: Cần ${order.amount}đ, nhận ${transferAmount}đ`);
+    }
+
+    return res.status(200).json({ success: true, message: 'Đã nhận và xử lý SePay webhook thành công.' });
+  } catch (err: any) {
+    console.error('[SePay Webhook] Lỗi khi xử lý webhook:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Lỗi xử lý webhook' });
+  }
+});
+
+// 6. Mô phỏng thanh toán thành công (Sandbox Simulator trên Localhost / Phòng bảo vệ đồ án)
+apiRouter.post('/payment/mock-pay/:orderCode', (req, res) => {
+  const orderCode = parseInt(req.params.orderCode, 10);
+  if (isNaN(orderCode)) {
+    return errorResponse(res, 'E-PAY-003', 'Mã đơn hàng không hợp lệ.', 400);
+  }
+
+  const order = db.getPaymentOrderByCode(orderCode);
+  if (!order) {
+    return errorResponse(res, 'E-PAY-004', 'Không tìm thấy đơn hàng để mô phỏng.', 404);
+  }
+
+  if (order.status === 'PAID') {
+    return successResponse(res, { message: 'Đơn hàng này đã được thanh toán trước đó.', order });
+  }
+
+  const updatedOrder = db.updatePaymentOrderStatus(
+    orderCode, 
+    'PAID', 
+    new Date().toISOString(), 
+    { simulated: true, gateway: 'SePay Sandbox Simulator', note: 'Test Pay for Localhost Demo' }
+  );
+
+  const updatedUser = db.getCurrentUser();
+
+  return successResponse(res, {
+    message: 'Mô phỏng thanh toán SePay thành công! Tài khoản đã được nâng cấp Pro VIP.',
+    order: updatedOrder,
+    user: updatedUser
+  });
+});
+
+// 7. Hủy đơn hàng thanh toán
+apiRouter.post('/payment/cancel/:orderCode', (req, res) => {
+  const orderCode = parseInt(req.params.orderCode, 10);
+  if (isNaN(orderCode)) {
+    return errorResponse(res, 'E-PAY-003', 'Mã đơn hàng không hợp lệ.', 400);
+  }
+
+  const order = db.getPaymentOrderByCode(orderCode);
+  if (!order) {
+    return errorResponse(res, 'E-PAY-004', 'Không tìm thấy đơn hàng.', 404);
+  }
+
+  const updated = db.updatePaymentOrderStatus(orderCode, 'CANCELLED');
+  return successResponse(res, { message: 'Đã hủy đơn hàng.', order: updated });
+});
+
 
