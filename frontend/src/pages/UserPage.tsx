@@ -779,7 +779,7 @@ export const UserPage: React.FC = () => {
                     return (
                       <div
                         key={c.id}
-                        className="p-4.5 rounded-2xl bg-white border border-slate-200/90 hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between space-y-3.5 group"
+                        className="p-5 rounded-2xl bg-white border border-slate-200/90 hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
                       >
                         <div className="space-y-2.5">
                           {/* Badges Row */}
@@ -872,7 +872,7 @@ export const UserPage: React.FC = () => {
             {/* ======================================================== */}
             <div className="lg:col-span-4 xl:col-span-3 space-y-4 lg:sticky lg:top-20">
               {/* Filter Panel Card */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4.5 space-y-4">
+              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 space-y-4">
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-2">
