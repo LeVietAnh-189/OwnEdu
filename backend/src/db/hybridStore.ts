@@ -627,7 +627,77 @@ export class HybridStore {
 
   // --- Courses Management (Admin) ---
   public getCourses(): Course[] {
-    return this.data.courses || [];
+    if (!this.data.courses || this.data.courses.length === 0) {
+      this.data.courses = [
+        {
+          id: 'course-1',
+          code: 'PROG101',
+          name: 'Lập Trình Web Fullstack Hiện Đại với React & Node.js',
+          description: 'Học lập trình web từ cơ bản đến nâng cao: React 19, TypeScript, REST API, TailwindCSS và cơ chế xác thực JWT.',
+          department: 'Công nghệ thông tin',
+          topic: 'Lập trình',
+          isFreeTier: true,
+          tierRequired: 'FREE',
+          documentIds: ['doc_microservices_sample'],
+          videoIds: [],
+          createdAt: '2026-09-20T10:00:00.000Z'
+        },
+        {
+          id: 'course-2',
+          code: 'DCK101',
+          name: 'Docker & Kubernetes Thực Chiến Cho DevOps',
+          description: 'Làm chủ Docker Container, Docker Compose đa dịch vụ, tối ưu Dockerfile và triển khai Kubernetes cluster thực tế.',
+          department: 'Hệ thống thông tin',
+          topic: 'Docker',
+          isFreeTier: false,
+          tierRequired: 'PRO',
+          documentIds: [],
+          videoIds: [],
+          createdAt: '2026-09-22T08:30:00.000Z'
+        },
+        {
+          id: 'course-3',
+          code: 'ENG101',
+          name: 'Tiếng Anh Chuyên Ngành CNTT & Luyện Phỏng Vấn IT',
+          description: 'Nâng cao vốn từ vựng tiếng Anh chuyên ngành công nghệ, bóc tách tài liệu kỹ thuật và luyện trả lời phỏng vấn IT chuẩn quốc tế.',
+          department: 'Ngoại ngữ',
+          topic: 'Tiếng Anh',
+          isFreeTier: true,
+          tierRequired: 'FREE',
+          documentIds: [],
+          videoIds: [],
+          createdAt: '2026-09-23T14:15:00.000Z'
+        },
+        {
+          id: 'course-4',
+          code: 'GIT101',
+          name: 'Git & GitHub Nâng Cao: CI/CD, Gitflow & Quản Trị Nhóm',
+          description: 'Quản trị mã nguồn chuyên nghiệp, xử lý conflict nâng cao, rebase, cherry-pick và thiết lập quy trình tự động hóa GitHub Actions.',
+          department: 'Kỹ thuật phần mềm',
+          topic: 'Git & Github',
+          isFreeTier: false,
+          tierRequired: 'PRO',
+          documentIds: [],
+          videoIds: [],
+          createdAt: '2026-09-24T16:00:00.000Z'
+        },
+        {
+          id: 'course-5',
+          code: 'AI102',
+          name: 'Trí Tuệ Nhân Tạo & Bloom Taxonomy trong Đánh Giá Khảo Thí',
+          description: 'Khám phá mô hình AI tạo sinh (LLM), kỹ thuật Prompt Engineering và quy chuẩn 4 cấp độ tư duy Bloom trong ra đề thi.',
+          department: 'Khoa học máy tính',
+          topic: 'Lập trình',
+          isFreeTier: false,
+          tierRequired: 'PRO',
+          documentIds: ['doc_microservices_sample'],
+          videoIds: [],
+          createdAt: '2026-09-25T09:00:00.000Z'
+        }
+      ];
+      this.persist();
+    }
+    return this.data.courses;
   }
 
   public getCourse(id: string): Course | null {
