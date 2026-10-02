@@ -496,13 +496,6 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                     </>
                   )}
                 </button>
-                <div className="flex items-center justify-center gap-4 mt-3 text-[11px] text-slate-400">
-                  <span className="flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-orange-500" /> Tự động nhận diện biến động số dư SePay
-                  </span>
-                  <span>•</span>
-                  <span>Kích hoạt Pro VIP tự động 100%</span>
-                </div>
               </div>
             </div>
           )}
