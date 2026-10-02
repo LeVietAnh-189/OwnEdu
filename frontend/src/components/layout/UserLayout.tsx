@@ -243,19 +243,22 @@ export const UserLayout: React.FC = () => {
 
       {/* Bottom Card: Membership Widget */}
       <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-50/80 via-amber-50/40 to-orange-50/60 border border-orange-200/90 space-y-2.5">
-        <div className="flex items-center justify-between">
+        <div className="space-y-1.5">
           <div className="flex items-center gap-2">
-            <Crown className="w-4 h-4 text-amber-500" />
+            <Crown className="w-4 h-4 text-amber-500 shrink-0" />
             <span className="text-xs font-black text-slate-900">
               {currentUser?.tier === 'PRO' ? 'Gói Pro VIP Sinh Viên' : 'Tài Khoản Miễn Phí'}
             </span>
           </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${currentUser?.tier === 'PRO'
-              ? 'bg-amber-100 text-amber-800 border-amber-300'
-              : 'bg-slate-100 text-slate-600 border-slate-200'
-            }`}>
-            {currentUser?.tier === 'PRO' ? 'Đang kích hoạt' : 'Hạn chế 3 đề/ngày'}
-          </span>
+          <div className="flex items-center">
+            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${currentUser?.tier === 'PRO'
+                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${currentUser?.tier === 'PRO' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+              {currentUser?.tier === 'PRO' ? 'Đang kích hoạt' : 'Hạn chế 3 đề/ngày'}
+            </span>
+          </div>
         </div>
         <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
           {currentUser?.tier === 'PRO'
