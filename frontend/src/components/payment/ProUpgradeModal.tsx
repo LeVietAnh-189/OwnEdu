@@ -187,9 +187,9 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Banner */}
-        <div className="relative bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 p-6 text-white overflow-hidden">
+        <div className="relative bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 p-6 text-white overflow-hidden">
           <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute left-1/3 -top-12 w-32 h-32 bg-teal-400/20 rounded-full blur-xl pointer-events-none" />
+          <div className="absolute left-1/3 -top-12 w-32 h-32 bg-amber-400/20 rounded-full blur-xl pointer-events-none" />
 
           <button
             onClick={onClose}
@@ -209,7 +209,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                   SePay VietQR
                 </span>
               </div>
-              <p className="text-emerald-100 text-xs sm:text-sm mt-0.5">
+              <p className="text-orange-100 text-xs sm:text-sm mt-0.5 font-medium">
                 Mở khóa không giới hạn tính năng AI Khảo thí & Kho bài giảng Video Cloudflare R2
               </p>
             </div>
@@ -228,7 +228,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
           {/* STATE 1: SUCCESSFUL UPGRADE SCREEN */}
           {isSuccessState ? (
             <div className="text-center py-8 px-4 space-y-4">
-              <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center animate-bounce shadow-lg shadow-emerald-500/20">
+              <div className="w-20 h-20 rounded-full bg-orange-100 text-orange-600 mx-auto flex items-center justify-center animate-bounce shadow-lg shadow-orange-500/20">
                 <CheckCircle2 className="w-12 h-12" />
               </div>
               <div className="space-y-1">
@@ -238,9 +238,9 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 max-w-md mx-auto text-left space-y-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
+              <div className="p-4 rounded-2xl bg-orange-50/80 border border-orange-200 max-w-md mx-auto text-left space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-orange-900">
+                  <Sparkles className="w-4 h-4 text-orange-600" />
                   <span>Đặc quyền đã được kích hoạt ngay lập tức:</span>
                 </div>
                 <ul className="text-xs text-slate-700 space-y-1 pl-6 list-disc">
@@ -254,7 +254,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
               <div className="pt-4">
                 <button
                   onClick={onClose}
-                  className="px-8 py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-600/30 hover:opacity-95 transition cursor-pointer"
+                  className="px-8 py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-orange-600 via-amber-500 to-orange-500 text-white shadow-lg shadow-orange-600/30 hover:opacity-95 transition cursor-pointer active:scale-95"
                 >
                   Bắt Đầu Trải Nghiệm Ngay
                 </button>
@@ -264,15 +264,15 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
             /* STATE 2: PENDING PAYMENT SEPAY VIETQR SCREEN */
             <div className="space-y-6">
               {/* Status Header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-orange-50/90 border border-orange-200/90">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
-                  <span className="text-xs font-bold text-emerald-950">
+                  <div className="w-3 h-3 rounded-full bg-orange-500 animate-ping" />
+                  <span className="text-xs font-bold text-orange-950">
                     Đang chờ hệ thống SePay ghi nhận biến động số dư...
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white text-emerald-700 border border-emerald-200 text-xs font-black shadow-xs">
-                  <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white text-orange-700 border border-orange-200 text-xs font-black shadow-xs">
+                  <Clock className="w-3.5 h-3.5 text-orange-500" />
                   <span>{formatTimer(timeLeftSeconds)}</span>
                 </div>
               </div>
@@ -324,7 +324,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                           className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
                           title="Sao chép số tài khoản"
                         >
-                          {copiedField === 'acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedField === 'acc' ? <Check className="w-3.5 h-3.5 text-orange-600" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
@@ -340,10 +340,10 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
 
                     <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
                       <span className="flex items-center gap-1.5 font-medium">
-                        <Zap className="w-3.5 h-3.5 text-emerald-500" /> Số tiền chuyển
+                        <Zap className="w-3.5 h-3.5 text-orange-500" /> Số tiền chuyển
                       </span>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-black text-emerald-600 text-base">
+                        <span className="font-black text-orange-600 text-base">
                           {formatCurrency(currentOrder.amount)}
                         </span>
                         <button
@@ -351,7 +351,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                           className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
                           title="Sao chép số tiền"
                         >
-                          {copiedField === 'amount' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedField === 'amount' ? <Check className="w-3.5 h-3.5 text-orange-600" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
@@ -369,7 +369,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                           className="p-1 rounded-md hover:bg-white text-slate-500 hover:text-slate-800 transition"
                           title="Sao chép nội dung chuyển khoản"
                         >
-                          {copiedField === 'code' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedField === 'code' ? <Check className="w-3.5 h-3.5 text-orange-600" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
@@ -387,22 +387,22 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                     </button>
 
                     {/* MOCK SANDBOX SIMULATOR BUTTON (Cực kỳ giá trị khi test localhost & bảo vệ đồ án) */}
-                    <div className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-dashed border-emerald-300 space-y-1">
+                    <div className="p-2.5 rounded-xl bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 border border-dashed border-orange-300 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-emerald-950 flex items-center gap-1">
-                          <Zap className="w-3 h-3 text-emerald-600" /> Chế độ Sandbox / Test Demo
+                        <span className="text-[11px] font-bold text-orange-950 flex items-center gap-1">
+                          <Zap className="w-3 h-3 text-orange-600" /> Chế độ Sandbox / Test Demo
                         </span>
-                        <span className="text-[10px] text-emerald-700 font-bold">Không tốn tiền thật</span>
+                        <span className="text-[10px] text-orange-700 font-bold">Không tốn tiền thật</span>
                       </div>
                       <button
                         onClick={handleMockPay}
                         disabled={isMockPaying}
-                        className="w-full py-2 rounded-lg text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="w-full py-2 rounded-lg text-xs font-black bg-gradient-to-r from-orange-600 to-amber-600 text-white hover:opacity-90 transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                       >
                         {isMockPaying ? (
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-200" />
                         )}
                         <span>Mô Phỏng SePay Xác Nhận Tiền Vào Ngay</span>
                       </button>
@@ -430,12 +430,12 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                       onClick={() => setSelectedPlanId(plan.id)}
                       className={`relative p-5 rounded-3xl cursor-pointer transition-all border-2 text-left flex flex-col justify-between ${
                         isSelected
-                          ? 'border-emerald-600 bg-emerald-50/50 shadow-md shadow-emerald-600/10'
+                          ? 'border-orange-500 bg-orange-50/50 shadow-md shadow-orange-500/15'
                           : 'border-slate-200 hover:border-slate-300 bg-white'
                       }`}
                     >
                       {plan.isPopular && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-[10px] font-black uppercase tracking-wider shadow-sm">
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-orange-600 to-amber-500 text-white text-[10px] font-black uppercase tracking-wider shadow-sm">
                           Phổ Biến Nhất
                         </div>
                       )}
@@ -444,7 +444,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-sm text-slate-900">{plan.name}</h4>
                           <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${
-                            isSelected ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300'
+                            isSelected ? 'border-orange-600 bg-orange-600 text-white' : 'border-slate-300'
                           }`}>
                             {isSelected && <Check className="w-3 h-3" />}
                           </div>
@@ -467,7 +467,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                       <div className="pt-4 border-t border-slate-100 mt-4 space-y-1.5">
                         {plan.features.slice(0, 3).map((feat, idx) => (
                           <div key={idx} className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <CheckCircle2 className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                             <span className="truncate">{feat}</span>
                           </div>
                         ))}
@@ -482,7 +482,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                 <button
                   onClick={handleCreateOrder}
                   disabled={isCreatingOrder}
-                  className="w-full py-4 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white shadow-xl shadow-emerald-600/25 hover:opacity-95 transition flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-4 rounded-2xl font-black text-sm bg-gradient-to-r from-orange-600 via-amber-500 to-orange-500 text-white shadow-xl shadow-orange-600/25 hover:from-orange-500 hover:to-amber-500 transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
                 >
                   {isCreatingOrder ? (
                     <>
@@ -498,7 +498,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                 </button>
                 <div className="flex items-center justify-center gap-4 mt-3 text-[11px] text-slate-400">
                   <span className="flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> Tự động nhận diện biến động số dư SePay
+                    <ShieldCheck className="w-3.5 h-3.5 text-orange-500" /> Tự động nhận diện biến động số dư SePay
                   </span>
                   <span>•</span>
                   <span>Kích hoạt Pro VIP tự động 100%</span>
