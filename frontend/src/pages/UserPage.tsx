@@ -36,7 +36,13 @@ import {
   Receipt,
   QrCode,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  SlidersHorizontal,
+  Filter,
+  RotateCcw,
+  ArrowUpDown,
+  Check,
+  Tag
 } from 'lucide-react';
 import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, PaymentAPI } from '../services/api';
 import { Course, DocumentItem, Exam, VideoItem, PaymentOrder } from '../types';
@@ -63,9 +69,22 @@ export const UserPage: React.FC = () => {
     setSearchParams({ tab });
   };
   
-  // Topic filter for Courses
+  // Filters for Courses
   const [selectedTopic, setSelectedTopic] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedPricing, setSelectedPricing] = useState<'ALL' | 'FREE' | 'PRO'>('ALL');
+  const [selectedMaterial, setSelectedMaterial] = useState<'ALL' | 'VIDEO' | 'DOCS'>('ALL');
+  const [selectedSort, setSelectedSort] = useState<'NEWEST' | 'NAME_ASC' | 'NAME_DESC' | 'MOST_LESSONS'>('NEWEST');
+
+  const handleResetCourseFilters = () => {
+    setSelectedTopic('ALL');
+    setSearchQuery('');
+    setSelectedPricing('ALL');
+    setSelectedMaterial('ALL');
+    setSelectedSort('NEWEST');
+  };
+
+  const isCourseFilterActive = selectedTopic !== 'ALL' || searchQuery.trim() !== '' || selectedPricing !== 'ALL' || selectedMaterial !== 'ALL' || selectedSort !== 'NEWEST';
 
   // Data states
   const [courses, setCourses] = useState<Course[]>([]);
@@ -260,15 +279,43 @@ export const UserPage: React.FC = () => {
     }
   };
 
-  // Filtered courses
-  const filteredCourses = courses.filter((c) => {
-    const matchTopic = selectedTopic === 'ALL' || c.topic === selectedTopic || c.department === selectedTopic;
-    const matchSearch = 
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.description && c.description.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchTopic && matchSearch;
-  });
+  // Filtered and sorted courses
+  const filteredCourses = courses
+    .filter((c) => {
+      // Topic filter
+      const matchTopic = selectedTopic === 'ALL' || c.topic === selectedTopic || c.department === selectedTopic;
+      
+      // Keyword search
+      const q = searchQuery.toLowerCase().trim();
+      const matchSearch = !q || 
+        c.name.toLowerCase().includes(q) || 
+        c.code.toLowerCase().includes(q) ||
+        (c.description && c.description.toLowerCase().includes(q));
+
+      // Pricing / Access tier filter
+      const isPro = c.isFreeTier === false || c.tierRequired === 'PRO';
+      let matchPricing = true;
+      if (selectedPricing === 'FREE') matchPricing = !isPro;
+      if (selectedPricing === 'PRO') matchPricing = isPro;
+
+      // Attached materials filter
+      let matchMaterial = true;
+      if (selectedMaterial === 'VIDEO') matchMaterial = Boolean(c.videoIds && c.videoIds.length > 0);
+      if (selectedMaterial === 'DOCS') matchMaterial = Boolean(c.documentIds && c.documentIds.length > 0);
+
+      return matchTopic && matchSearch && matchPricing && matchMaterial;
+    })
+    .sort((a, b) => {
+      if (selectedSort === 'NAME_ASC') return a.name.localeCompare(b.name, 'vi');
+      if (selectedSort === 'NAME_DESC') return b.name.localeCompare(a.name, 'vi');
+      if (selectedSort === 'MOST_LESSONS') {
+        const countA = (a.videoIds?.length || 0) + (a.documentIds?.length || 0);
+        const countB = (b.videoIds?.length || 0) + (b.documentIds?.length || 0);
+        return countB - countA;
+      }
+      // 'NEWEST' default
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
 
   // Mock enrolled courses for "Khóa học của tôi"
   const enrolledCourses = [
@@ -590,41 +637,45 @@ export const UserPage: React.FC = () => {
             })()}
           </div>
         ) : (
-          <div className="space-y-6 w-full">
-            {/* Top Controls: Search & Topic Filter (Liền mạch, không đóng hộp rườm rà) */}
-            <div className="space-y-3.5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full">
+            {/* ======================================================== */}
+            {/* CỘT TRÁI (8 / 9 cột): Danh sách môn học & Bộ tìm kiếm */}
+            {/* ======================================================== */}
+            <div className="lg:col-span-8 xl:col-span-9 space-y-4">
               {/* Row 1: Search Input */}
-              <div className="flex items-center">
-                <div className="relative w-full max-w-2xl">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm môn học theo tên, chủ đề đào tạo..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 shadow-2xs transition-all font-medium"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+              <div className="relative w-full">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm môn học theo tên, mã môn, chủ đề đào tạo..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 shadow-2xs transition-all font-medium"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
-              {/* Row 2: Topic Filter Pills (Trực tiếp, không bọc trong box viền lớn) */}
+              {/* Row 2: Topic Filter Pills */}
               <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
                 {USER_COURSE_TOPICS.map((topic) => {
                   const Icon = topic.icon;
                   const isSelected = selectedTopic === topic.id;
+                  const topicCount = topic.id === 'ALL' 
+                    ? courses.length 
+                    : courses.filter(c => c.topic === topic.id || c.department === topic.id).length;
                   return (
                     <button
                       key={topic.id}
                       onClick={() => setSelectedTopic(topic.id)}
-                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
                         isSelected
                           ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/25'
                           : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80 shadow-2xs'
@@ -632,94 +683,370 @@ export const UserPage: React.FC = () => {
                     >
                       <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-orange-500'}`} />
                       <span className="whitespace-nowrap">{topic.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        isSelected ? 'bg-orange-700/60 text-white' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {topicCount}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Courses Grid */}
-            {isLoading ? (
-              <div className="p-12 text-center text-slate-500 bg-white rounded-2xl border border-slate-200">
-                Đang tải danh sách khóa học...
-              </div>
-            ) : filteredCourses.length === 0 ? (
-              <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center space-y-3">
-                <BookOpen className="w-10 h-10 mx-auto text-slate-300" />
-                <p className="font-bold text-slate-700">Chưa có môn học nào thuộc chủ đề này</p>
-                <p className="text-xs text-slate-400">Bạn có thể chọn chủ đề khác hoặc thử lại với từ khóa tìm kiếm.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredCourses.map((c) => {
-                  const isProTier = c.isFreeTier === false || c.tierRequired === 'PRO';
-                  const isUserPro = currentUser?.tier === 'PRO';
-                  const canAccess = !isProTier || isUserPro;
+              {/* Row 3: Active Filters & Results Summary Bar */}
+              <div className="flex items-center justify-between gap-3 flex-wrap bg-white/70 backdrop-blur-xs px-3.5 py-2 rounded-xl border border-slate-200/70 text-xs">
+                <div className="flex items-center gap-2 flex-wrap text-slate-500">
+                  <span className="font-semibold text-slate-700">
+                    Hiển thị <span className="text-orange-600 font-bold">{filteredCourses.length}</span> / {courses.length} môn học
+                  </span>
 
-                  return (
-                    <div
-                      key={c.id}
-                      className="p-5 rounded-2xl bg-white border border-slate-200/90 hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
+                  {/* Active Chips */}
+                  {selectedTopic !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-semibold">
+                      Chủ đề: {selectedTopic}
+                      <button onClick={() => setSelectedTopic('ALL')} className="hover:text-orange-950 cursor-pointer">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {selectedPricing !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
+                      Gói: {selectedPricing === 'FREE' ? 'Miễn phí' : 'PRO VIP'}
+                      <button onClick={() => setSelectedPricing('ALL')} className="hover:text-amber-950 cursor-pointer">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {selectedMaterial !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-semibold">
+                      {selectedMaterial === 'VIDEO' ? 'Có Video bài giảng' : 'Có Giáo trình PDF'}
+                      <button onClick={() => setSelectedMaterial('ALL')} className="hover:text-orange-950 cursor-pointer">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {searchQuery.trim() && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold">
+                      Từ khóa: "{searchQuery}"
+                      <button onClick={() => setSearchQuery('')} className="hover:text-slate-900 cursor-pointer">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                </div>
+
+                {isCourseFilterActive && (
+                  <button
+                    onClick={handleResetCourseFilters}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-600 hover:text-orange-700 hover:underline cursor-pointer ml-auto"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Đặt lại tất cả</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Courses Grid */}
+              {isLoading ? (
+                <div className="p-12 text-center text-slate-500 bg-white rounded-2xl border border-slate-200">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-orange-500 mb-2" />
+                  Đang tải danh sách khóa học...
+                </div>
+              ) : filteredCourses.length === 0 ? (
+                <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center space-y-3">
+                  <BookOpen className="w-10 h-10 mx-auto text-slate-300" />
+                  <p className="font-bold text-slate-700">Không tìm thấy khóa học nào phù hợp</p>
+                  <p className="text-xs text-slate-400">Bạn có thể xóa bớt bộ lọc hoặc chọn mức giá / chủ đề khác.</p>
+                  {isCourseFilterActive && (
+                    <button
+                      onClick={handleResetCourseFilters}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors inline-flex items-center gap-1.5 cursor-pointer mt-2"
                     >
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-1.5">
-                            {isProTier ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                                <Crown className="w-3 h-3 text-amber-600" />
-                                <span>Gói PRO</span>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Xóa toàn bộ bộ lọc</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filteredCourses.map((c) => {
+                    const isProTier = c.isFreeTier === false || c.tierRequired === 'PRO';
+                    const isUserPro = currentUser?.tier === 'PRO';
+                    const canAccess = !isProTier || isUserPro;
+                    const hasVideos = c.videoIds && c.videoIds.length > 0;
+                    const hasDocs = c.documentIds && c.documentIds.length > 0;
+
+                    return (
+                      <div
+                        key={c.id}
+                        className="p-5 rounded-2xl bg-white border border-slate-200/90 hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
+                      >
+                        <div className="space-y-2.5">
+                          {/* Badges Row */}
+                          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              {isProTier ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+                                  <Crown className="w-3 h-3 text-amber-600" />
+                                  <span>Gói PRO VIP</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Miễn phí</span>
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                              {c.topic || c.department || 'Công nghệ'}
+                            </span>
+                          </div>
+
+                          {/* Title */}
+                          <h3 className="text-sm font-bold text-slate-900 group-hover:text-orange-600 transition-colors line-clamp-2 leading-snug">
+                            {c.name}
+                          </h3>
+
+                          {/* Description */}
+                          <p className="text-xs text-slate-500 line-clamp-2 font-normal leading-relaxed">
+                            {c.description || 'Chương trình đào tạo chuẩn khảo thí với ngân hàng câu hỏi Bloom Taxonomy & chấm AI.'}
+                          </p>
+
+                          {/* Metadata Tags (Videos, Docs) */}
+                          <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-400">
+                            {hasVideos && (
+                              <span className="inline-flex items-center gap-1 text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                                <Video className="w-3 h-3 text-orange-500" />
+                                <span>{c.videoIds!.length} bài giảng</span>
                               </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                <span>Miễn phí</span>
+                            )}
+                            {hasDocs && (
+                              <span className="inline-flex items-center gap-1 text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                                <FileText className="w-3 h-3 text-amber-500" />
+                                <span>Tài liệu PDF</span>
+                              </span>
+                            )}
+                            {!hasVideos && !hasDocs && (
+                              <span className="inline-flex items-center gap-1 text-slate-400">
+                                <Clock className="w-3 h-3" />
+                                <span>45 tiết học</span>
                               </span>
                             )}
                           </div>
-
-                          <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                            {c.topic || c.department || 'Công nghệ'}
-                          </span>
                         </div>
 
-                        <h3 className="text-base font-bold text-slate-900 group-hover:text-orange-600 transition-colors line-clamp-2">
-                          {c.name}
-                        </h3>
-
-                        <p className="text-xs text-slate-500 line-clamp-2 font-normal leading-relaxed">
-                          {c.description || 'Chương trình đào tạo chuẩn khảo thí với ngân hàng câu hỏi Bloom Taxonomy & chấm AI.'}
-                        </p>
+                        {/* Footer Action */}
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-mono text-slate-400">
+                            {c.code}
+                          </span>
+                          {canAccess ? (
+                            <button
+                              onClick={() => handleOpenCourse(c)}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-orange-50 hover:bg-orange-600 text-orange-700 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-[0.98]"
+                            >
+                              <span>Vào học</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setIsUpgradeModalOpen(true)}
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer border border-amber-200 shadow-2xs active:scale-[0.98]"
+                              title="Nâng cấp tài khoản PRO để học môn này"
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                              <span>Mở khóa PRO</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>45 tiết</span>
-                        </span>
-                        {canAccess ? (
-                          <button
-                            onClick={() => handleOpenCourse(c)}
-                            className="px-4 py-1.5 rounded-xl text-xs font-bold bg-orange-50 hover:bg-orange-600 text-orange-700 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-[0.98]"
-                          >
-                            <span>Học & Xem bài giảng</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setActiveTab('profile')}
-                            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer border border-amber-200"
-                            title="Nâng cấp tài khoản PRO để học môn này"
-                          >
-                            <Lock className="w-3.5 h-3.5" />
-                            <span>Yêu cầu PRO</span>
-                          </button>
-                        )}
-                      </div>
+            {/* ======================================================== */}
+            {/* CỘT PHẢI (4 / 3 cột): BỘ LỌC KHÓA HỌC & BANNER PRO VIP */}
+            {/* ======================================================== */}
+            <div className="lg:col-span-4 xl:col-span-3 space-y-4 lg:sticky lg:top-20">
+              {/* Filter Panel Card */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                      <SlidersHorizontal className="w-4 h-4" />
                     </div>
-                  );
-                })}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 leading-tight">Bộ Lọc Khóa Học</h4>
+                      <p className="text-[10px] text-slate-400">Tùy biến tìm kiếm</p>
+                    </div>
+                  </div>
+
+                  {isCourseFilterActive && (
+                    <button
+                      onClick={handleResetCourseFilters}
+                      className="text-[11px] font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 cursor-pointer"
+                      title="Đặt lại bộ lọc"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Đặt lại</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter 1: Học phí / Gói học (Price Tier) */}
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Crown className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Học phí & Gói học</span>
+                  </label>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {[
+                      { id: 'ALL', label: 'Tất cả mức giá', count: courses.length },
+                      { 
+                        id: 'FREE', 
+                        label: 'Miễn phí (Free)', 
+                        count: courses.filter(c => c.isFreeTier !== false && c.tierRequired !== 'PRO').length
+                      },
+                      { 
+                        id: 'PRO', 
+                        label: 'Gói PRO VIP', 
+                        count: courses.filter(c => c.isFreeTier === false || c.tierRequired === 'PRO').length
+                      },
+                    ].map((opt) => {
+                      const isSelected = selectedPricing === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => setSelectedPricing(opt.id as any)}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer text-left border ${
+                            isSelected
+                              ? 'bg-orange-50/80 border-orange-500 text-orange-950 font-bold shadow-2xs'
+                              : 'bg-slate-50/50 hover:bg-slate-100/80 border-slate-200/70 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                              isSelected ? 'border-orange-600 bg-orange-600' : 'border-slate-300 bg-white'
+                            }`}>
+                              {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                            <span>{opt.label}</span>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                            isSelected ? 'bg-orange-200/70 text-orange-900' : 'bg-slate-200/70 text-slate-600'
+                          }`}>
+                            {opt.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Filter 2: Hình thức học liệu (Materials) */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-orange-500" />
+                    <span>Học liệu đi kèm</span>
+                  </label>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {[
+                      { id: 'ALL', label: 'Tất cả tài nguyên', icon: Layers },
+                      { id: 'VIDEO', label: 'Có Video bài giảng', icon: Video },
+                      { id: 'DOCS', label: 'Có Giáo trình & PDF', icon: FileText },
+                    ].map((opt) => {
+                      const isSelected = selectedMaterial === opt.id;
+                      const Icon = opt.icon;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => setSelectedMaterial(opt.id as any)}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer text-left border ${
+                            isSelected
+                              ? 'bg-orange-50/80 border-orange-500 text-orange-950 font-bold shadow-2xs'
+                              : 'bg-slate-50/50 hover:bg-slate-100/80 border-slate-200/70 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-orange-600' : 'text-slate-400'}`} />
+                            <span>{opt.label}</span>
+                          </div>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-orange-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Filter 3: Sắp xếp (Sorting) */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Sắp xếp thứ tự</span>
+                  </label>
+                  <select
+                    value={selectedSort}
+                    onChange={(e) => setSelectedSort(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 cursor-pointer"
+                  >
+                    <option value="NEWEST">Mới cập nhật gần đây</option>
+                    <option value="NAME_ASC">Tên môn học (A → Z)</option>
+                    <option value="NAME_DESC">Tên môn học (Z → A)</option>
+                    <option value="MOST_LESSONS">Nhiều bài học / học liệu nhất</option>
+                  </select>
+                </div>
               </div>
-            )}
+
+              {/* Special Pro VIP Promotion Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-amber-500/15 border border-amber-200/80 space-y-3 relative overflow-hidden shadow-2xs">
+                <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-amber-400/10 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                    <Crown className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-amber-900 leading-tight">Đặc Quyền PRO VIP</h5>
+                    <p className="text-[10px] text-amber-700 font-medium">Trải nghiệm học tập đỉnh cao</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-[11px] text-amber-900 font-medium">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span>Mở khóa toàn bộ bài giảng Video & Khóa học</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span>Bóc tách tài liệu & Sinh đề thi AI chuẩn Bloom</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span>Chấm điểm tự luận & Phân tích lỗ hổng kiến thức</span>
+                  </div>
+                </div>
+
+                {currentUser?.tier === 'PRO' ? (
+                  <div className="pt-1">
+                    <div className="w-full py-2 px-3 rounded-xl bg-amber-100/80 border border-amber-300 text-amber-900 text-center text-xs font-bold flex items-center justify-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Bạn đã là PRO VIP</span>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setIsUpgradeModalOpen(true)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm shadow-orange-500/30 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    <span>Nâng cấp PRO chỉ từ 69k</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )
       )}
