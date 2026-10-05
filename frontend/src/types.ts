@@ -175,6 +175,7 @@ export interface User {
   fullName: string;
   role: UserRole;
   tier: UserTier;
+  proExpiresAt?: string;
 }
 
 export interface Lesson {
@@ -273,4 +274,37 @@ export interface SystemServiceConfig {
   estimatedEndTime?: string;
   allowAdminBypass?: boolean;
   updatedAt?: string;
+}
+
+// Payment & Pro VIP Types (SePay VietQR)
+export type PaymentPlanId = 'PRO_MONTHLY' | 'PRO_QUARTERLY' | 'PRO_YEARLY';
+export type PaymentOrderStatus = 'PENDING' | 'PAID' | 'CANCELLED' | 'EXPIRED';
+
+export interface PaymentPlan {
+  id: PaymentPlanId;
+  name: string;
+  price: number; // in VNĐ
+  durationDays: number;
+  description: string;
+  features: string[];
+  isPopular?: boolean;
+}
+
+export interface PaymentOrder {
+  id: string;
+  orderCode: number;
+  paymentCode: string;
+  userId: string;
+  userEmail?: string;
+  planId: PaymentPlanId;
+  amount: number;
+  status: PaymentOrderStatus;
+  description: string;
+  qrCode?: string;
+  accountName?: string;
+  accountNumber?: string;
+  bankName?: string;
+  createdAt: string;
+  paidAt?: string;
+  cancelledAt?: string;
 }

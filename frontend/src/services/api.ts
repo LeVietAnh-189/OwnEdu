@@ -1,5 +1,22 @@
 import axios from 'axios';
-import { DocumentItem, DocumentChunk, Exam, GradeReport, User, UserRole, UserTier, Course, Chapter, VideoItem, AdminStats, TokenUsageLog, SystemServiceConfig } from '../types';
+import { 
+  DocumentItem, 
+  DocumentChunk, 
+  Exam, 
+  GradeReport, 
+  User, 
+  UserRole, 
+  UserTier, 
+  Course, 
+  Chapter, 
+  VideoItem, 
+  AdminStats, 
+  TokenUsageLog, 
+  SystemServiceConfig,
+  PaymentOrder, 
+  PaymentPlan, 
+  PaymentPlanId 
+} from '../types';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -376,6 +393,56 @@ export const SystemServiceAPI = {
     const res = await api.post<{ success: boolean; data: { transactionId: string; status: string; message: string } }>('/payments/checkout');
     return res.data.data;
   }
+};
+
+export const PaymentAPI = {
+  getPlans: async () => {
+    const res = await api.get<{
+      success: boolean;
+      data: {
+        plans: PaymentPlan[];
+        bankInfo: {
+          bankName: string;
+          accountNumber: string;
+          accountName: string;
+          isConfigured: boolean;
+        };
+      };
+    }>('/payment/plans');
+    return res.data.data;
+  },
+  createOrder: async (planId: PaymentPlanId) => {
+    const res = await api.post<{
+      success: boolean;
+      data: {
+        order: PaymentOrder;
+        bankInfo: {
+          bankName: string;
+          accountNumber: string;
+          accountName: string;
+          amount: number;
+          paymentCode: string;
+        };
+      };
+    }>('/payment/create', { planId });
+    return res.data.data;
+  },
+  getOrders: async () => {
+    const res = await api.get<{ success: boolean; data: PaymentOrder[] }>('/payment/orders');
+    return res.data.data;
+  },
+  getOrder: async (orderCode: number) => {
+    const res = await api.get<{ success: boolean; data: PaymentOrder }>(`/payment/orders/${orderCode}`);
+    return res.data.data;
+  },
+  mockPay: async (orderCode: number) => {
+    const res = await api.post<{ success: boolean; data: { message: string; order: PaymentOrder; user: User } }>(`/payment/mock-pay/${orderCode}`);
+    return res.data.data;
+  },
+  cancelOrder: async (orderCode: number) => {
+    const res = await api.post<{ success: boolean; data: { message: string; order: PaymentOrder } }>(`/payment/cancel/${orderCode}`);
+    return res.data.data;
+  },
 };
 
 export default api;

@@ -13,7 +13,11 @@ import {
   TokenUsageLog,
   VideoItem,
   GenerationProgressEvent,
-  SystemServiceConfig 
+  SystemServiceConfig,
+  PaymentOrder,
+  PaymentPlan,
+  PaymentPlanId,
+  PaymentOrderStatus
 } from '../types.js';
 
 export interface SystemSettings {
@@ -69,6 +73,52 @@ export const DEFAULT_SYSTEM_SERVICES: SystemServiceConfig[] = [
   }
 ];
 
+export const DEFAULT_PAYMENT_PLANS: PaymentPlan[] = [
+  {
+    id: 'PRO_MONTHLY',
+    name: 'Gói 1 Tháng',
+    price: 2000,
+    durationDays: 30,
+    description: 'Trải nghiệm toàn diện các tính năng AI & Video chất lượng cao',
+    features: [
+      'Tạo đề thi AI không giới hạn từ tài liệu giáo trình',
+      'Chấm điểm tự luận Rubric chi tiết 4 tiêu chí',
+      'Xem video bài giảng Cloudflare R2 Streaming độ nét cao',
+      'Tải tài liệu, giáo trình đính kèm (.pdf, .docx)',
+      'Huy hiệu Pro VIP nổi bật'
+    ]
+  },
+  {
+    id: 'PRO_QUARTERLY',
+    name: 'Gói 3 Tháng (Tiết kiệm 15%)',
+    price: 249000,
+    durationDays: 90,
+    description: 'Lựa chọn lý tưởng theo học kỳ dành cho sinh viên',
+    features: [
+      'Tất cả quyền lợi của Gói 1 Tháng',
+      'Tiết kiệm 48.000 VNĐ so với mua lẻ từng tháng',
+      'Ưu tiên tốc độ xử lý khi bóc tách giáo trình',
+      'Không giới hạn dung lượng lưu trữ tài liệu',
+      'Chứng chỉ hoàn thành khóa học có mã QR xác thực'
+    ],
+    isPopular: true
+  },
+  {
+    id: 'PRO_YEARLY',
+    name: 'Gói 1 Năm (Siêu Tiết Kiệm)',
+    price: 799000,
+    durationDays: 365,
+    description: 'Đồng hành cả năm học với chi phí tiết kiệm hơn 33%',
+    features: [
+      'Tất cả quyền lợi của Gói 3 Tháng',
+      'Tiết kiệm gần 400.000 VNĐ / năm',
+      'Truy cập sớm các mô hình AI mới nhất',
+      'Đặc quyền tải toàn bộ tài nguyên đồ án & giáo trình',
+      'Hỗ trợ kỹ thuật 1-1 từ đội ngũ giảng viên'
+    ]
+  }
+];
+
 interface DatabaseSchema {
   users: User[];
   documents: DocumentItem[];
@@ -81,6 +131,7 @@ interface DatabaseSchema {
   videos?: VideoItem[];
   tokenLogs?: TokenUsageLog[];
   services?: SystemServiceConfig[];
+  paymentOrders?: PaymentOrder[];
   activeUserId?: string;
 }
 
@@ -179,6 +230,9 @@ export class HybridStore {
         }
         if (!parsed.services || parsed.services.length === 0) {
           parsed.services = JSON.parse(JSON.stringify(DEFAULT_SYSTEM_SERVICES));
+        }
+        if (!parsed.paymentOrders) {
+          parsed.paymentOrders = [];
         }
         return parsed;
       }
@@ -308,6 +362,7 @@ export class HybridStore {
     if (updates.fullName !== undefined) user.fullName = updates.fullName;
     if (updates.email !== undefined) user.email = updates.email;
     if (updates.code !== undefined) user.code = updates.code;
+    if (updates.proExpiresAt !== undefined) user.proExpiresAt = updates.proExpiresAt;
     this.persist();
     return user;
   }
@@ -324,6 +379,87 @@ export class HybridStore {
     this.persist();
     return this.data.users.length < initLen;
   }
+
+  // --- Payment & Pro VIP Orders (SePay VietQR) ---
+  public getPaymentPlans(): PaymentPlan[] {
+    return DEFAULT_PAYMENT_PLANS;
+  }
+
+  public getPaymentPlan(planId: PaymentPlanId): PaymentPlan | undefined {
+    return DEFAULT_PAYMENT_PLANS.find(p => p.id === planId);
+  }
+
+  public getPaymentOrders(userId?: string): PaymentOrder[] {
+    if (!this.data.paymentOrders) {
+      this.data.paymentOrders = [];
+    }
+    if (userId) {
+      return this.data.paymentOrders.filter(o => o.userId === userId);
+    }
+    return this.data.paymentOrders;
+  }
+
+  public getPaymentOrderByCode(orderCode: number): PaymentOrder | undefined {
+    if (!this.data.paymentOrders) return undefined;
+    return this.data.paymentOrders.find(o => o.orderCode === orderCode);
+  }
+
+  public getPaymentOrderByPaymentCode(paymentCode: string): PaymentOrder | undefined {
+    if (!this.data.paymentOrders) return undefined;
+    const clean = paymentCode.toUpperCase().trim();
+    return this.data.paymentOrders.find(o => o.paymentCode.toUpperCase() === clean);
+  }
+
+  public createPaymentOrder(order: PaymentOrder): PaymentOrder {
+    if (!this.data.paymentOrders) {
+      this.data.paymentOrders = [];
+    }
+    this.data.paymentOrders.unshift(order);
+    this.persist();
+    return order;
+  }
+
+  public updatePaymentOrderStatus(
+    orderCode: number, 
+    status: PaymentOrderStatus, 
+    paidAt?: string, 
+    rawWebhookData?: any
+  ): PaymentOrder | undefined {
+    if (!this.data.paymentOrders) return undefined;
+    const order = this.data.paymentOrders.find(o => o.orderCode === orderCode);
+    if (!order) return undefined;
+
+    order.status = status;
+    if (paidAt) order.paidAt = paidAt;
+    if (rawWebhookData) order.rawWebhookData = rawWebhookData;
+
+    // Tự động nâng cấp tài khoản nếu thanh toán thành công
+    if (status === 'PAID') {
+      const plan = this.getPaymentPlan(order.planId);
+      const days = plan ? plan.durationDays : 30;
+      this.upgradeUserToPro(order.userId, days);
+    }
+
+    this.persist();
+    return order;
+  }
+
+  public upgradeUserToPro(userId: string, durationDays: number = 30): User | undefined {
+    const user = this.data.users.find(u => u.id === userId);
+    if (!user) return undefined;
+
+    user.tier = 'PRO';
+    const now = new Date();
+    let currentExpiry = user.proExpiresAt ? new Date(user.proExpiresAt) : null;
+    let baseDate = (currentExpiry && currentExpiry.getTime() > now.getTime()) ? currentExpiry : now;
+    
+    const newExpiry = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    user.proExpiresAt = newExpiry.toISOString();
+
+    this.persist();
+    return user;
+  }
+
 
   // --- Documents ---
   public getDocuments(userId?: string): DocumentItem[] {
@@ -571,7 +707,77 @@ export class HybridStore {
 
   // --- Courses Management (Admin) ---
   public getCourses(): Course[] {
-    return this.data.courses || [];
+    if (!this.data.courses || this.data.courses.length === 0) {
+      this.data.courses = [
+        {
+          id: 'course-1',
+          code: 'PROG101',
+          name: 'Lập Trình Web Fullstack Hiện Đại với React & Node.js',
+          description: 'Học lập trình web từ cơ bản đến nâng cao: React 19, TypeScript, REST API, TailwindCSS và cơ chế xác thực JWT.',
+          department: 'Công nghệ thông tin',
+          topic: 'Lập trình',
+          isFreeTier: true,
+          tierRequired: 'FREE',
+          documentIds: ['doc_microservices_sample'],
+          videoIds: [],
+          createdAt: '2026-09-20T10:00:00.000Z'
+        },
+        {
+          id: 'course-2',
+          code: 'DCK101',
+          name: 'Docker & Kubernetes Thực Chiến Cho DevOps',
+          description: 'Làm chủ Docker Container, Docker Compose đa dịch vụ, tối ưu Dockerfile và triển khai Kubernetes cluster thực tế.',
+          department: 'Hệ thống thông tin',
+          topic: 'Docker',
+          isFreeTier: false,
+          tierRequired: 'PRO',
+          documentIds: [],
+          videoIds: [],
+          createdAt: '2026-09-22T08:30:00.000Z'
+        },
+        {
+          id: 'course-3',
+          code: 'ENG101',
+          name: 'Tiếng Anh Chuyên Ngành CNTT & Luyện Phỏng Vấn IT',
+          description: 'Nâng cao vốn từ vựng tiếng Anh chuyên ngành công nghệ, bóc tách tài liệu kỹ thuật và luyện trả lời phỏng vấn IT chuẩn quốc tế.',
+          department: 'Ngoại ngữ',
+          topic: 'Tiếng Anh',
+          isFreeTier: true,
+          tierRequired: 'FREE',
+          documentIds: [],
+          videoIds: [],
+          createdAt: '2026-09-23T14:15:00.000Z'
+        },
+        {
+          id: 'course-4',
+          code: 'GIT101',
+          name: 'Git & GitHub Nâng Cao: CI/CD, Gitflow & Quản Trị Nhóm',
+          description: 'Quản trị mã nguồn chuyên nghiệp, xử lý conflict nâng cao, rebase, cherry-pick và thiết lập quy trình tự động hóa GitHub Actions.',
+          department: 'Kỹ thuật phần mềm',
+          topic: 'Git & Github',
+          isFreeTier: false,
+          tierRequired: 'PRO',
+          documentIds: [],
+          videoIds: [],
+          createdAt: '2026-09-24T16:00:00.000Z'
+        },
+        {
+          id: 'course-5',
+          code: 'AI102',
+          name: 'Trí Tuệ Nhân Tạo & Bloom Taxonomy trong Đánh Giá Khảo Thí',
+          description: 'Khám phá mô hình AI tạo sinh (LLM), kỹ thuật Prompt Engineering và quy chuẩn 4 cấp độ tư duy Bloom trong ra đề thi.',
+          department: 'Khoa học máy tính',
+          topic: 'Lập trình',
+          isFreeTier: false,
+          tierRequired: 'PRO',
+          documentIds: ['doc_microservices_sample'],
+          videoIds: [],
+          createdAt: '2026-09-25T09:00:00.000Z'
+        }
+      ];
+      this.persist();
+    }
+    return this.data.courses;
   }
 
   public getCourse(id: string): Course | null {
@@ -1013,7 +1219,8 @@ export class HybridStore {
       exams: [],
       examAttempts: [],
       gradeReports: [],
-      services: JSON.parse(JSON.stringify(DEFAULT_SYSTEM_SERVICES))
+      services: JSON.parse(JSON.stringify(DEFAULT_SYSTEM_SERVICES)),
+      paymentOrders: []
     };
   }
 }
