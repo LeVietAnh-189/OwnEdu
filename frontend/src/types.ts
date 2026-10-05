@@ -177,6 +177,24 @@ export interface User {
   tier: UserTier;
 }
 
+export interface Lesson {
+  id: string;
+  title: string;
+  orderIndex: number;
+  durationMinutes?: number;
+  content: string; // Hypertext markdown with callouts, code blocks, images
+  videoUrl?: string; // Optional embedded video / YouTube URL
+  updatedAt?: string;
+}
+
+export interface Chapter {
+  id: string;
+  title: string;
+  orderIndex: number;
+  description?: string;
+  lessons: Lesson[];
+}
+
 export interface Course {
   id: string;
   code: string;
@@ -188,6 +206,8 @@ export interface Course {
   tierRequired?: UserTier;
   documentIds?: string[];
   videoIds?: string[];
+  chapters?: Chapter[];
+  status?: 'draft' | 'published';
   createdAt: string;
 }
 
@@ -238,4 +258,19 @@ export interface AdminStats {
   serverUptimeSeconds: number;
   users: User[];
   courses: Course[];
+}
+
+export type ServiceStatus = 'RUNNING' | 'MAINTENANCE';
+
+export interface SystemServiceConfig {
+  id: string;
+  name: string;
+  key: 'auth' | 'payment' | 'product' | 'cart';
+  port: number;
+  status: ServiceStatus;
+  description: string;
+  maintenanceMessage?: string;
+  estimatedEndTime?: string;
+  allowAdminBypass?: boolean;
+  updatedAt?: string;
 }

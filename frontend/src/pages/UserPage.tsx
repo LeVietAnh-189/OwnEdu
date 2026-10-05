@@ -31,9 +31,12 @@ import {
   Lock,
   Video,
   Film,
-  Youtube
+  Youtube,
+  Wrench,
+  ShieldAlert,
+  AlertTriangle
 } from 'lucide-react';
-import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI } from '../services/api';
+import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, SystemServiceAPI } from '../services/api';
 import { Course, DocumentItem, Exam, VideoItem } from '../types';
 import { useUserStore } from '../store/userStore';
 
@@ -74,9 +77,28 @@ export const UserPage: React.FC = () => {
   const [courseDetailTab, setCourseDetailTab] = useState<'VIDEOS' | 'DOCUMENTS'>('VIDEOS');
   const [activeLessonVideo, setActiveLessonVideo] = useState<VideoItem | null>(null);
 
-  const activeCourse = (activeTab === 'courses' && courseIdParam)
+  // System maintenance states
+  const [maintenanceServices, setMaintenanceServices] = useState<Array<{ key: string; name: string; message?: string; estimatedEndTime?: string }>>([]);
+  const [showPaymentMaintenanceModal, setShowPaymentMaintenanceModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    SystemServiceAPI.getStatusMap()
+      .then(map => {
+        const active: Array<{ key: string; name: string; message?: string; estimatedEndTime?: string }> = [];
+        Object.entries(map).forEach(([key, info]) => {
+          if (info.inMaintenance) {
+            active.push({ key, ...info });
+          }
+        });
+        setMaintenanceServices(active);
+      })
+      .catch(() => {});
+  }, []);
+
+  const rawActiveCourse = (activeTab === 'courses' && courseIdParam)
     ? (courses.find(c => c.id === courseIdParam) || selectedCourseForDetail)
     : selectedCourseForDetail;
+  const activeCourse = rawActiveCourse && rawActiveCourse.status !== 'draft' ? rawActiveCourse : null;
 
   useEffect(() => {
     if (activeCourse) {
@@ -239,8 +261,9 @@ export const UserPage: React.FC = () => {
     }
   };
 
-  // Filtered courses
+  // Filtered courses (Chỉ hiển thị các khóa học đã xuất bản: status !== 'draft')
   const filteredCourses = courses.filter((c) => {
+    if (c.status === 'draft') return false;
     const matchTopic = selectedTopic === 'ALL' || c.topic === selectedTopic || c.department === selectedTopic;
     const matchSearch = 
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -288,6 +311,38 @@ export const UserPage: React.FC = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-7xl mx-auto">
+      {/* System Maintenance Banner (if any service is under maintenance) */}
+      {maintenanceServices.length > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-900 shadow-sm space-y-2 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5 font-bold text-sm text-amber-800">
+            <span className="p-1.5 rounded-lg bg-amber-500 text-white shadow-xs">
+              <Wrench className="w-4 h-4 animate-spin-slow" />
+            </span>
+            <span>Hệ thống đang tiến hành bảo trì & nâng cấp một số dịch vụ</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 text-xs">
+            {maintenanceServices.map(srv => (
+              <div key={srv.key} className="p-2.5 rounded-xl bg-white/80 border border-amber-200/70 flex flex-col justify-between">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    {srv.name}
+                  </span>
+                  {srv.estimatedEndTime && (
+                    <span className="text-[11px] text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md font-medium">
+                      Dự kiến: {srv.estimatedEndTime}
+                    </span>
+                  )}
+                </div>
+                <p className="text-slate-600 text-[11px] mt-1 italic">
+                  "{srv.message || 'Hệ thống đang tạm ngừng dịch vụ này để tối ưu & bảo trì định kỳ. Quý khách vui lòng thử lại sau.'}"
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ======================================================== */}
       {/* TAB 1: KHÓA HỌC */}
       {/* ======================================================== */}
@@ -1198,7 +1253,14 @@ export const UserPage: React.FC = () => {
               </div>
 
               <button
-                onClick={() => alert('Gói Pro của bạn đang hoạt động đầy đủ quyền lợi!')}
+                onClick={() => {
+                  const paymentSrv = maintenanceServices.find(s => s.key === 'payment');
+                  if (paymentSrv) {
+                    setShowPaymentMaintenanceModal(true);
+                  } else {
+                    alert('Gói Pro của bạn đang hoạt động đầy đủ quyền lợi!');
+                  }
+                }}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-white text-orange-700 border border-orange-200 hover:bg-orange-50 shadow-xs transition"
               >
                 Quản lý gói học
@@ -1218,6 +1280,59 @@ export const UserPage: React.FC = () => {
                 <span className="text-[11px] font-bold text-slate-500 uppercase">Chấm tự luận Rubric</span>
                 <p className="text-sm font-black text-slate-900">Chi tiết theo tiêu chí</p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Maintenance Modal */}
+      {showPaymentMaintenanceModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-100 text-amber-700">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Dịch Vụ Thanh Toán Đang Bảo Trì</h3>
+                  <p className="text-xs text-slate-500">Cổng thanh toán tạm thời đóng giao dịch</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPaymentMaintenanceModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/80 text-xs text-amber-900 space-y-1.5">
+              <p className="font-semibold">
+                {maintenanceServices.find(s => s.key === 'payment')?.message ||
+                  'Cổng thanh toán đang được bảo trì nâng cấp kết nối ngân hàng và ví điện tử.'}
+              </p>
+              {maintenanceServices.find(s => s.key === 'payment')?.estimatedEndTime && (
+                <p className="text-slate-600">
+                  Thời gian hoàn tất dự kiến:{' '}
+                  <span className="font-bold text-amber-800">
+                    {maintenanceServices.find(s => s.key === 'payment')?.estimatedEndTime}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Các tính năng nâng cấp gói, gia hạn và thanh toán giao dịch sẽ tạm dừng trong ít phút. Quý khách hàng đã có gói PRO vẫn tiếp tục sử dụng học tập bình thường mà không bị ảnh hưởng.
+            </p>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setShowPaymentMaintenanceModal(false)}
+                className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition cursor-pointer"
+              >
+                Tôi đã hiểu
+              </button>
             </div>
           </div>
         </div>

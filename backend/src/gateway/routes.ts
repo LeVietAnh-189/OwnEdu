@@ -35,6 +35,41 @@ const upload = multer({
 
 const MAX_VIDEO_SIZE_MB = parseInt(process.env.MAX_VIDEO_SIZE_MB || '2048', 10);
 
+const imageStorageDir = path.resolve(process.cwd(), 'data/uploads/images');
+if (!fs.existsSync(imageStorageDir)) {
+  fs.mkdirSync(imageStorageDir, { recursive: true });
+}
+
+const imageStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, imageStorageDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    const safeName = `img_${uuidv4().slice(0, 8)}_${Date.now()}${ext}`;
+    cb(null, safeName);
+  }
+});
+
+const imageUpload = multer({
+  storage: imageStorage,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max per image
+  fileFilter: (_req, file, cb) => {
+    const name = file.originalname.toLowerCase();
+    if (file.mimetype.startsWith('image/') ||
+        name.endsWith('.png') ||
+        name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.gif') ||
+        name.endsWith('.svg')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Chỉ hỗ trợ tệp hình ảnh định dạng .png, .jpg, .jpeg, .webp, .gif hoặc .svg'));
+    }
+  }
+});
+
 const videoUpload = multer({
   dest: path.resolve(process.cwd(), 'uploads/temp'),
   limits: { fileSize: MAX_VIDEO_SIZE_MB * 1024 * 1024 }, // Mặc định 2GB (2048MB) cho video bài giảng
@@ -83,6 +118,41 @@ function errorResponse(res: Response, code: string, message: string, status = 40
       requestId: uuidv4()
     }
   });
+}
+
+// Middleware to check if a specific system service is under maintenance
+export function serviceMaintenanceMiddleware(serviceKey: 'auth' | 'payment' | 'product' | 'cart') {
+  return (req: Request, res: Response, next: () => void) => {
+    const svc = db.getServiceByKey(serviceKey);
+    if (!svc || svc.status !== 'MAINTENANCE') {
+      return next();
+    }
+
+    const roleHeader = req.headers['x-user-role'] as string;
+    const currentUser = db.getCurrentUser();
+    const isAdmin = roleHeader ? (roleHeader === 'ADMIN') : (currentUser?.role === 'ADMIN');
+
+    // If admin is performing actions and bypass is permitted, allow with bypass header
+    if (isAdmin && (svc.allowAdminBypass !== false)) {
+      res.setHeader('X-Service-Maintenance-Bypass', 'true');
+      return next();
+    }
+
+    return res.status(503).json({
+      success: false,
+      error: {
+        code: 'E-SERVICE-MAINTENANCE',
+        message: svc.maintenanceMessage || `Dịch vụ ${svc.name} đang trong chế độ bảo trì định kỳ.`,
+        serviceKey: svc.key,
+        serviceName: svc.name,
+        estimatedEndTime: svc.estimatedEndTime || null
+      },
+      meta: {
+        timestamp: new Date().toISOString(),
+        requestId: uuidv4()
+      }
+    });
+  };
 }
 
 // -------------------------------------------------------------
@@ -749,6 +819,66 @@ apiRouter.post('/settings/test-r2', async (req, res) => {
 });
 
 // -------------------------------------------------------------
+// SYSTEM SERVICES MAINTENANCE ENDPOINTS
+// -------------------------------------------------------------
+apiRouter.get('/system/services', (_req, res) => {
+  const services = db.getServices();
+  return successResponse(res, services);
+});
+
+apiRouter.get('/system/services/status', (_req, res) => {
+  const services = db.getServices();
+  const statusMap: Record<string, { inMaintenance: boolean; name: string; message?: string; estimatedEndTime?: string }> = {};
+  services.forEach(s => {
+    statusMap[s.key] = {
+      inMaintenance: s.status === 'MAINTENANCE',
+      name: s.name,
+      message: s.maintenanceMessage,
+      estimatedEndTime: s.estimatedEndTime
+    };
+  });
+  return successResponse(res, statusMap);
+});
+
+apiRouter.post('/system/services/:id/toggle', (req, res) => {
+  const roleHeader = req.headers['x-user-role'] as string;
+  const currentUser = db.getCurrentUser();
+  const isAdmin = roleHeader === 'ADMIN' || currentUser?.role === 'ADMIN' || process.env.NODE_ENV !== 'production';
+
+  if (!isAdmin) {
+    return errorResponse(res, 'E-AUTH-403', 'Từ chối truy cập: Chỉ Quản trị viên (ADMIN) mới có quyền bật/tắt bảo trì dịch vụ.', 403);
+  }
+
+  const { id } = req.params;
+  const { status, maintenanceMessage, estimatedEndTime, allowAdminBypass } = req.body;
+
+  const targetService = db.getServiceByKey(id);
+  if (!targetService) {
+    return errorResponse(res, 'E-SVC-404', `Không tìm thấy dịch vụ với mã hoặc ID: ${id}`, 404);
+  }
+
+  const nextStatus = status ? status : (targetService.status === 'RUNNING' ? 'MAINTENANCE' : 'RUNNING');
+
+  const updated = db.updateService(targetService.id, {
+    status: nextStatus,
+    ...(maintenanceMessage !== undefined && { maintenanceMessage: String(maintenanceMessage).trim() }),
+    ...(estimatedEndTime !== undefined && { estimatedEndTime: String(estimatedEndTime).trim() }),
+    ...(allowAdminBypass !== undefined && { allowAdminBypass: Boolean(allowAdminBypass) })
+  });
+
+  return successResponse(res, updated);
+});
+
+// Test Payment Endpoint (Guarded by Payment Service Maintenance Middleware)
+apiRouter.post('/payments/checkout', serviceMaintenanceMiddleware('payment'), (req, res) => {
+  return successResponse(res, {
+    transactionId: `tx_${Date.now()}`,
+    status: 'COMPLETED',
+    message: 'Thanh toán thành công (Môi trường thử nghiệm Sandbox).'
+  });
+});
+
+// -------------------------------------------------------------
 // ADMIN ENDPOINTS (System, Resources, Courses, Tokens, API Keys)
 // -------------------------------------------------------------
 apiRouter.get('/admin/stats', (req, res) => {
@@ -761,8 +891,13 @@ apiRouter.get('/admin/courses', (req, res) => {
   return successResponse(res, courses);
 });
 
+apiRouter.get('/courses', (req, res) => {
+  const courses = db.getCourses().filter(c => c.status !== 'draft');
+  return successResponse(res, courses);
+});
+
 apiRouter.post('/admin/courses', (req, res) => {
-  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds } = req.body;
+  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds, chapters, status } = req.body;
   if (!code || !name) {
     return errorResponse(res, 'E-CRS-001', 'Mã môn học và tên môn học là bắt buộc.', 400);
   }
@@ -770,18 +905,22 @@ apiRouter.post('/admin/courses', (req, res) => {
   const tier = isFree ? 'FREE' : 'PRO';
   const docIds = Array.isArray(documentIds) ? documentIds.map((id: any) => String(id).trim()).filter(Boolean) : [];
   const vIds = Array.isArray(videoIds) ? videoIds.map((id: any) => String(id).trim()).filter(Boolean) : [];
+  const courseChapters = Array.isArray(chapters) ? chapters : [];
+  const courseStatus = status === 'published' ? 'published' : 'draft';
 
   const newCourse = db.addCourse({
     id: `crs_${uuidv4().slice(0, 8)}`,
-    code: code.trim().toUpperCase(),
+    code: code.trim(),
     name: name.trim(),
     description: (description || '').trim(),
-    department: (department || 'Khoa Công nghệ Thông tin').trim(),
+    department: (department || topic || 'Chung').trim(),
     topic: (topic || 'Lập trình').trim(),
     isFreeTier: isFree,
     tierRequired: tier,
     documentIds: docIds,
     videoIds: vIds,
+    chapters: courseChapters,
+    status: courseStatus,
     createdAt: new Date().toISOString()
   });
   return successResponse(res, newCourse, 201);
@@ -789,7 +928,7 @@ apiRouter.post('/admin/courses', (req, res) => {
 
 apiRouter.put('/admin/courses/:id', (req, res) => {
   const { id } = req.params;
-  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds } = req.body;
+  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds, chapters, status } = req.body;
 
   const existing = db.getCourse(id);
   if (!existing) {
@@ -797,7 +936,7 @@ apiRouter.put('/admin/courses/:id', (req, res) => {
   }
 
   const updates: Partial<typeof existing> = {};
-  if (code !== undefined) updates.code = String(code).trim().toUpperCase();
+  if (code !== undefined) updates.code = String(code).trim();
   if (name !== undefined) updates.name = String(name).trim();
   if (description !== undefined) updates.description = String(description).trim();
   if (department !== undefined) updates.department = String(department).trim();
@@ -812,6 +951,12 @@ apiRouter.put('/admin/courses/:id', (req, res) => {
   }
   if (videoIds !== undefined && Array.isArray(videoIds)) {
     updates.videoIds = videoIds.map((v: any) => String(v).trim()).filter(Boolean);
+  }
+  if (chapters !== undefined && Array.isArray(chapters)) {
+    updates.chapters = chapters;
+  }
+  if (status !== undefined) {
+    updates.status = status === 'published' ? 'published' : 'draft';
   }
 
   const updated = db.updateCourse(id, updates);
@@ -852,6 +997,48 @@ apiRouter.get('/admin/resources', (req, res) => {
       documentCount: documents.length
     }
   });
+});
+
+// ==========================================
+// IMAGE UPLOADS FOR HYPERTEXT LESSONS
+// ==========================================
+apiRouter.post('/images/upload', imageUpload.single('file'), (req, res) => {
+  const file = req.file;
+  if (!file) {
+    return errorResponse(res, 'E-IMG-001', 'Vui lòng đính kèm tệp hình ảnh để tải lên.', 400);
+  }
+
+  const url = `/api/v1/images/${file.filename}`;
+  return successResponse(res, {
+    url,
+    filename: file.filename,
+    originalName: decodeFilename(file.originalname),
+    sizeBytes: file.size
+  }, 201);
+});
+
+apiRouter.get('/images/:filename', (req, res) => {
+  const { filename } = req.params;
+  const safeFilename = path.basename(filename);
+  const filePath = path.join(imageStorageDir, safeFilename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('Không tìm thấy hình ảnh.');
+  }
+
+  const ext = path.extname(safeFilename).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml'
+  };
+
+  res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  fs.createReadStream(filePath).pipe(res);
 });
 
 // ==========================================

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { DocumentItem, DocumentChunk, Exam, GradeReport, User, UserRole, UserTier, Course, VideoItem, AdminStats, TokenUsageLog } from '../types';
+import { DocumentItem, DocumentChunk, Exam, GradeReport, User, UserRole, UserTier, Course, Chapter, VideoItem, AdminStats, TokenUsageLog, SystemServiceConfig } from '../types';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -262,6 +262,8 @@ export const AdminAPI = {
     tierRequired?: 'FREE' | 'PRO';
     documentIds?: string[];
     videoIds?: string[];
+    chapters?: Chapter[];
+    status?: 'draft' | 'published';
   }) => {
     const res = await api.post<{ success: boolean; data: Course }>('/admin/courses', payload);
     return res.data.data;
@@ -332,6 +334,48 @@ export const VideoAPI = {
     const res = await api.delete<{ success: boolean; data: { message: string } }>(`/videos/${id}`);
     return res.data.data;
   },
+};
+
+export const ImageAPI = {
+  upload: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await api.post<{ success: boolean; data: { url: string; filename: string; originalName: string; sizeBytes: number } }>(
+      '/images/upload',
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
+    );
+    return res.data.data;
+  },
+};
+
+export const SystemServiceAPI = {
+  list: async () => {
+    const res = await api.get<{ success: boolean; data: SystemServiceConfig[] }>('/system/services');
+    return res.data.data;
+  },
+  getStatusMap: async () => {
+    const res = await api.get<{
+      success: boolean;
+      data: Record<string, { inMaintenance: boolean; name: string; message?: string; estimatedEndTime?: string }>;
+    }>('/system/services/status');
+    return res.data.data;
+  },
+  toggleMaintenance: async (id: string, payload: {
+    status?: 'RUNNING' | 'MAINTENANCE';
+    maintenanceMessage?: string;
+    estimatedEndTime?: string;
+    allowAdminBypass?: boolean;
+  }) => {
+    const res = await api.post<{ success: boolean; data: SystemServiceConfig }>(`/system/services/${id}/toggle`, payload);
+    return res.data.data;
+  },
+  testPaymentCheckout: async () => {
+    const res = await api.post<{ success: boolean; data: { transactionId: string; status: string; message: string } }>('/payments/checkout');
+    return res.data.data;
+  }
 };
 
 export default api;
