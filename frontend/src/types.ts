@@ -178,6 +178,24 @@ export interface User {
   proExpiresAt?: string;
 }
 
+export interface Lesson {
+  id: string;
+  title: string;
+  orderIndex: number;
+  durationMinutes?: number;
+  content: string; // Hypertext markdown with callouts, code blocks, images
+  videoUrl?: string; // Optional embedded video / YouTube URL
+  updatedAt?: string;
+}
+
+export interface Chapter {
+  id: string;
+  title: string;
+  orderIndex: number;
+  description?: string;
+  lessons: Lesson[];
+}
+
 export interface Course {
   id: string;
   code: string;
@@ -189,6 +207,8 @@ export interface Course {
   tierRequired?: UserTier;
   documentIds?: string[];
   videoIds?: string[];
+  chapters?: Chapter[];
+  status?: 'draft' | 'published';
   createdAt: string;
 }
 
@@ -241,6 +261,21 @@ export interface AdminStats {
   courses: Course[];
 }
 
+export type ServiceStatus = 'RUNNING' | 'MAINTENANCE';
+
+export interface SystemServiceConfig {
+  id: string;
+  name: string;
+  key: 'auth' | 'payment' | 'product' | 'cart';
+  port: number;
+  status: ServiceStatus;
+  description: string;
+  maintenanceMessage?: string;
+  estimatedEndTime?: string;
+  allowAdminBypass?: boolean;
+  updatedAt?: string;
+}
+
 // Payment & Pro VIP Types (SePay VietQR)
 export type PaymentPlanId = 'PRO_MONTHLY' | 'PRO_QUARTERLY' | 'PRO_YEARLY';
 export type PaymentOrderStatus = 'PENDING' | 'PAID' | 'CANCELLED' | 'EXPIRED';
@@ -273,4 +308,3 @@ export interface PaymentOrder {
   paidAt?: string;
   cancelledAt?: string;
 }
-

@@ -8,7 +8,7 @@ import {
   Copy, 
   Check, 
   RefreshCw, 
-  Zap, 
+  Zap,
   X,
   CreditCard,
   Building2,
@@ -36,8 +36,6 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<PaymentPlanId>('PRO_QUARTERLY');
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
-  const [isMockPaying, setIsMockPaying] = useState(false);
   
   // Current active order
   const [currentOrder, setCurrentOrder] = useState<PaymentOrder | null>(null);
@@ -128,45 +126,6 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
       setErrorMessage(err?.response?.data?.error?.message || err?.message || 'Không thể tạo mã thanh toán.');
     } finally {
       setIsCreatingOrder(false);
-    }
-  };
-
-  const handleMockPay = async () => {
-    if (!currentOrder) return;
-    try {
-      setIsMockPaying(true);
-      const res = await PaymentAPI.mockPay(currentOrder.orderCode);
-      if (res && res.order) {
-        setCurrentOrder(res.order);
-        setIsSuccessState(true);
-        await fetchCurrentUser();
-        if (onSuccess) onSuccess();
-      }
-    } catch (err: any) {
-      console.error('Error executing mock payment:', err);
-      setErrorMessage(err?.message || 'Lỗi khi mô phỏng thanh toán.');
-    } finally {
-      setIsMockPaying(false);
-    }
-  };
-
-  const handleManualCheckStatus = async () => {
-    if (!currentOrder) return;
-    try {
-      setIsCheckingStatus(true);
-      const orderData = await PaymentAPI.getOrder(currentOrder.orderCode);
-      if (orderData && orderData.status === 'PAID') {
-        setCurrentOrder(orderData);
-        setIsSuccessState(true);
-        await fetchCurrentUser();
-        if (onSuccess) onSuccess();
-      } else {
-        alert('Hệ thống chưa nhận được biến động số dư cho mã này. Vui lòng thử lại sau vài giây!');
-      }
-    } catch (e) {
-      alert('Không thể kết nối đến máy chủ thanh toán.');
-    } finally {
-      setIsCheckingStatus(false);
     }
   };
 
@@ -375,44 +334,13 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Actions and Sandbox Simulator Button */}
-                  <div className="space-y-2 pt-2">
-                    <button
-                      onClick={handleManualCheckStatus}
-                      disabled={isCheckingStatus}
-                      className="w-full py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 flex items-center justify-center gap-2 transition cursor-pointer"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isCheckingStatus ? 'animate-spin' : ''}`} />
-                      <span>Kiểm tra trạng thái biến động số dư</span>
-                    </button>
-
-                    {/* MOCK SANDBOX SIMULATOR BUTTON (Cực kỳ giá trị khi test localhost & bảo vệ đồ án) */}
-                    <div className="p-2.5 rounded-xl bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 border border-dashed border-orange-300 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-orange-950 flex items-center gap-1">
-                          <Zap className="w-3 h-3 text-orange-600" /> Chế độ Sandbox / Test Demo
-                        </span>
-                        <span className="text-[10px] text-orange-700 font-bold">Không tốn tiền thật</span>
-                      </div>
-                      <button
-                        onClick={handleMockPay}
-                        disabled={isMockPaying}
-                        className="w-full py-2 rounded-lg text-xs font-black bg-gradient-to-r from-orange-600 to-amber-600 text-white hover:opacity-90 transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                      >
-                        {isMockPaying ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-200" />
-                        )}
-                        <span>Mô Phỏng SePay Xác Nhận Tiền Vào Ngay</span>
-                      </button>
-                    </div>
-
+                  {/* Actions */}
+                  <div className="pt-2">
                     <button
                       onClick={() => setCurrentOrder(null)}
-                      className="w-full py-2 text-center text-xs text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                      className="w-full py-2.5 text-center text-xs text-slate-500 hover:text-slate-800 font-semibold bg-slate-50 hover:bg-slate-100 rounded-xl transition cursor-pointer border border-slate-200"
                     >
-                      Đổi gói cước khác
+                      ← Đổi gói cước khác
                     </button>
                   </div>
                 </div>

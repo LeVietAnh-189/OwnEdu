@@ -32,6 +32,9 @@ import {
   Video,
   Film,
   Youtube,
+  Wrench,
+  ShieldAlert,
+  AlertTriangle,
   CreditCard,
   Receipt,
   QrCode,
@@ -42,12 +45,19 @@ import {
   RotateCcw,
   ArrowUpDown,
   Check,
-  Tag
+  Tag,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  Terminal
 } from 'lucide-react';
-import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, PaymentAPI } from '../services/api';
-import { Course, DocumentItem, Exam, VideoItem, PaymentOrder } from '../types';
+import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, SystemServiceAPI, PaymentAPI } from '../services/api';
+import { Course, DocumentItem, Exam, VideoItem, PaymentOrder, Chapter, Lesson } from '../types';
 import { useUserStore } from '../store/userStore';
+import { useLayoutStore } from '../store/layoutStore';
 import { ProUpgradeModal } from '../components/payment/ProUpgradeModal';
+import { HypertextRenderer } from '../components/HypertextRenderer';
+import { SqlSandbox } from '../components/sql/SqlSandbox';
 
 export const USER_COURSE_TOPICS = [
   { id: 'ALL', name: 'Tất cả chủ đề', icon: Layers },
@@ -72,7 +82,7 @@ export const UserPage: React.FC = () => {
   // Filters for Courses
   const [selectedTopic, setSelectedTopic] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedPricing, setSelectedPricing] = useState<'ALL' | 'FREE' | 'PRO'>('ALL');
+  const [selectedPricing, setSelectedPricing] = useState<'ALL' | 'FREE' | 'PRO' | 'UPCOMING'>('ALL');
   const [selectedMaterial, setSelectedMaterial] = useState<'ALL' | 'VIDEO' | 'DOCS'>('ALL');
   const [selectedSort, setSelectedSort] = useState<'NEWEST' | 'NAME_ASC' | 'NAME_DESC' | 'MOST_LESSONS'>('NEWEST');
 
@@ -110,47 +120,179 @@ export const UserPage: React.FC = () => {
 
   // Course Classroom & Active Lesson state
   const courseIdParam = searchParams.get('courseId');
+  const lessonIdParam = searchParams.get('lessonId');
   const [selectedCourseForDetail, setSelectedCourseForDetail] = useState<Course | null>(null);
-  const [courseDetailTab, setCourseDetailTab] = useState<'VIDEOS' | 'DOCUMENTS'>('VIDEOS');
+  const [courseDetailTab, setCourseDetailTab] = useState<'LESSONS' | 'VIDEOS' | 'DOCUMENTS'>('LESSONS');
   const [activeLessonVideo, setActiveLessonVideo] = useState<VideoItem | null>(null);
+  const [activeInteractiveLesson, setActiveInteractiveLesson] = useState<Lesson | null>(null);
+  const [activeLessonChapter, setActiveLessonChapter] = useState<Chapter | null>(null);
+  const [expandedChapterIds, setExpandedChapterIds] = useState<string[]>([]);
+  const {
+    isSidebarCollapsed,
+    setSidebarCollapsed,
+    isSqlSandboxOpen: showSqlPlayground,
+    setSqlSandboxOpen: setShowSqlPlayground,
+  } = useLayoutStore();
 
-  const activeCourse = (activeTab === 'courses' && courseIdParam)
+  // Restore sidebar and sandbox state when leaving course or unmounting
+  useEffect(() => {
+    return () => {
+      setShowSqlPlayground(false);
+      setSidebarCollapsed(false);
+    };
+  }, [setShowSqlPlayground, setSidebarCollapsed]);
+
+  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('ownedu_completed_lessons');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleCompleteLesson = (lessonId: string) => {
+    setCompletedLessonIds(prev => {
+      const next = prev.includes(lessonId) ? prev.filter(id => id !== lessonId) : [...prev, lessonId];
+      try {
+        localStorage.setItem('ownedu_completed_lessons', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const toggleExpandChapter = (chapterId: string) => {
+    setExpandedChapterIds(prev => 
+      prev.includes(chapterId) ? prev.filter(id => id !== chapterId) : [...prev, chapterId]
+    );
+  };
+
+  // System maintenance states
+  const [maintenanceServices, setMaintenanceServices] = useState<Array<{ key: string; name: string; message?: string; estimatedEndTime?: string }>>([]);
+  const [showPaymentMaintenanceModal, setShowPaymentMaintenanceModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    SystemServiceAPI.getStatusMap()
+      .then(map => {
+        const active: Array<{ key: string; name: string; message?: string; estimatedEndTime?: string }> = [];
+        Object.entries(map).forEach(([key, info]) => {
+          if (info.inMaintenance) {
+            active.push({ key, ...info });
+          }
+        });
+        setMaintenanceServices(active);
+      })
+      .catch(() => {});
+  }, []);
+
+  const rawActiveCourse = (activeTab === 'courses' && courseIdParam)
     ? (courses.find(c => c.id === courseIdParam) || selectedCourseForDetail)
     : selectedCourseForDetail;
+  const activeCourse = rawActiveCourse && rawActiveCourse.status !== 'draft' ? rawActiveCourse : null;
 
   useEffect(() => {
     if (activeCourse) {
-      const attachedVideoIds = activeCourse.videoIds || [];
-      const courseVids = videos.filter(v => attachedVideoIds.includes(v.id));
-      if (courseVids.length > 0) {
-        setActiveLessonVideo(prev => {
-          if (prev && courseVids.some(v => v.id === prev.id)) {
-            return prev;
-          }
-          return courseVids[0];
+      const chapters = activeCourse.chapters || [];
+      const allLessonsWithChapter: Array<{ lesson: Lesson; chapter: Chapter }> = [];
+      chapters.forEach(ch => {
+        (ch.lessons || []).forEach(ls => {
+          allLessonsWithChapter.push({ lesson: ls, chapter: ch });
         });
+      });
+
+      // Expand all chapters by default so user can see lessons immediately
+      setExpandedChapterIds(chapters.map(c => c.id));
+
+      if (allLessonsWithChapter.length > 0) {
+        setCourseDetailTab('LESSONS');
+        let savedLastLessonId: string | null = null;
+        try {
+          savedLastLessonId = localStorage.getItem(`ownedu_last_lesson_${activeCourse.id}`);
+        } catch {}
+
+        const target = (lessonIdParam && allLessonsWithChapter.find(item => item.lesson.id === lessonIdParam))
+          || (savedLastLessonId && allLessonsWithChapter.find(item => item.lesson.id === savedLastLessonId))
+          || allLessonsWithChapter.find(item => !completedLessonIds.includes(item.lesson.id))
+          || allLessonsWithChapter[0];
+
+        setActiveInteractiveLesson(target.lesson);
+        setActiveLessonChapter(target.chapter);
       } else {
-        setActiveLessonVideo(null);
+        setActiveInteractiveLesson(null);
+        setActiveLessonChapter(null);
+        const attachedVideoIds = activeCourse.videoIds || [];
+        const courseVids = videos.filter(v => attachedVideoIds.includes(v.id));
+        if (courseVids.length > 0) {
+          setCourseDetailTab('VIDEOS');
+          setActiveLessonVideo(courseVids[0]);
+        } else {
+          setCourseDetailTab(activeCourse.documentIds?.length ? 'DOCUMENTS' : 'LESSONS');
+        }
       }
     } else {
+      setActiveInteractiveLesson(null);
+      setActiveLessonChapter(null);
       setActiveLessonVideo(null);
     }
-  }, [activeCourse?.id, videos]);
+  }, [activeCourse?.id, courses, lessonIdParam]);
+
+  const handleSelectLesson = (lesson: Lesson, chapter: Chapter) => {
+    setActiveInteractiveLesson(lesson);
+    setActiveLessonChapter(chapter);
+    setCourseDetailTab('LESSONS');
+    if (activeCourse) {
+      try {
+        localStorage.setItem(`ownedu_last_lesson_${activeCourse.id}`, lesson.id);
+      } catch {}
+    }
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', 'courses');
+      if (activeCourse) next.set('courseId', activeCourse.id);
+      next.set('lessonId', lesson.id);
+      return next;
+    });
+  };
 
   const handleOpenCourse = (c: Course) => {
+    if (c.status === 'draft') return;
     setSelectedCourseForDetail(c);
-    setSearchParams({ tab: 'courses', courseId: c.id });
+    const allLessons = (c.chapters || []).flatMap(ch => ch.lessons || []);
+    let targetLessonId: string | undefined = undefined;
+    try {
+      const saved = localStorage.getItem(`ownedu_last_lesson_${c.id}`);
+      if (saved && allLessons.some(l => l.id === saved)) {
+        targetLessonId = saved;
+      }
+    } catch {}
+    if (!targetLessonId) {
+      const firstUnfinished = allLessons.find(l => !completedLessonIds.includes(l.id));
+      targetLessonId = firstUnfinished ? firstUnfinished.id : allLessons[0]?.id;
+    }
+
+    if (targetLessonId) {
+      setSearchParams({ tab: 'courses', courseId: c.id, lessonId: targetLessonId });
+    } else {
+      setSearchParams({ tab: 'courses', courseId: c.id });
+    }
   };
 
   const handleBackToCourses = () => {
     setSelectedCourseForDetail(null);
+    setActiveInteractiveLesson(null);
+    setActiveLessonChapter(null);
+    setActiveLessonVideo(null);
     setSearchParams({ tab: 'courses' });
   };
 
-  const getYoutubeEmbedId = (vid: VideoItem): string | null => {
-    if (vid.youtubeId) return vid.youtubeId;
-    if (!vid.youtubeUrl) return null;
-    const match = vid.youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+  const getYoutubeEmbedId = (urlOrVid: string | VideoItem): string | null => {
+    if (!urlOrVid) return null;
+    if (typeof urlOrVid === 'object') {
+      if (urlOrVid.youtubeId) return urlOrVid.youtubeId;
+      if (urlOrVid.youtubeUrl) return getYoutubeEmbedId(urlOrVid.youtubeUrl);
+      return null;
+    }
+    const match = urlOrVid.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
     return match ? match[1] : null;
   };
 
@@ -279,7 +421,7 @@ export const UserPage: React.FC = () => {
     }
   };
 
-  // Filtered and sorted courses
+  // Filtered and sorted courses (Bao gồm cả các khóa học sắp ra mắt: status === 'draft')
   const filteredCourses = courses
     .filter((c) => {
       // Topic filter
@@ -292,11 +434,13 @@ export const UserPage: React.FC = () => {
         c.code.toLowerCase().includes(q) ||
         (c.description && c.description.toLowerCase().includes(q));
 
-      // Pricing / Access tier filter
+      // Pricing / Access tier / Status filter
       const isPro = c.isFreeTier === false || c.tierRequired === 'PRO';
+      const isDraft = c.status === 'draft';
       let matchPricing = true;
-      if (selectedPricing === 'FREE') matchPricing = !isPro;
-      if (selectedPricing === 'PRO') matchPricing = isPro;
+      if (selectedPricing === 'FREE') matchPricing = !isDraft && !isPro;
+      if (selectedPricing === 'PRO') matchPricing = !isDraft && isPro;
+      if (selectedPricing === 'UPCOMING') matchPricing = isDraft;
 
       // Attached materials filter
       let matchMaterial = true;
@@ -355,7 +499,43 @@ export const UserPage: React.FC = () => {
   ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-7xl mx-auto">
+    <div className={`space-y-6 w-full ${
+      showSqlPlayground || isSidebarCollapsed
+        ? 'max-w-none px-4 sm:px-6 lg:px-8 py-4'
+        : 'max-w-7xl mx-auto p-4 sm:p-6 lg:p-8'
+    }`}>
+      {/* System Maintenance Banner (if any service is under maintenance) */}
+      {maintenanceServices.length > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-900 shadow-sm space-y-2 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5 font-bold text-sm text-amber-800">
+            <span className="p-1.5 rounded-lg bg-amber-500 text-white shadow-xs">
+              <Wrench className="w-4 h-4 animate-spin-slow" />
+            </span>
+            <span>Hệ thống đang tiến hành bảo trì & nâng cấp một số dịch vụ</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 text-xs">
+            {maintenanceServices.map(srv => (
+              <div key={srv.key} className="p-2.5 rounded-xl bg-white/80 border border-amber-200/70 flex flex-col justify-between">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    {srv.name}
+                  </span>
+                  {srv.estimatedEndTime && (
+                    <span className="text-[11px] text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md font-medium">
+                      Dự kiến: {srv.estimatedEndTime}
+                    </span>
+                  )}
+                </div>
+                <p className="text-slate-600 text-[11px] mt-1 italic">
+                  "{srv.message || 'Hệ thống đang tạm ngừng dịch vụ này để tối ưu & bảo trì định kỳ. Quý khách vui lòng thử lại sau.'}"
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ======================================================== */}
       {/* TAB 1: KHÓA HỌC */}
       {/* ======================================================== */}
@@ -369,138 +549,411 @@ export const UserPage: React.FC = () => {
               const attachedDocIds = activeCourse.documentIds || [];
               const courseVideos = videos.filter(v => attachedVideoIds.includes(v.id));
               const courseDocs = documents.filter(d => attachedDocIds.includes(d.id));
+              const courseChapters = activeCourse.chapters || [];
 
+              const allLessonsList: Array<{ lesson: Lesson; chapter: Chapter }> = [];
+              courseChapters.forEach(ch => {
+                (ch.lessons || []).forEach(ls => {
+                  allLessonsList.push({ lesson: ls, chapter: ch });
+                });
+              });
+              const totalLessonsCount = allLessonsList.length;
+              const currentLessonIdx = activeInteractiveLesson 
+                ? allLessonsList.findIndex(item => item.lesson.id === activeInteractiveLesson.id) 
+                : -1;
+              const prevLesson = currentLessonIdx > 0 ? allLessonsList[currentLessonIdx - 1] : null;
+              const nextLesson = (currentLessonIdx !== -1 && currentLessonIdx < allLessonsList.length - 1) 
+                ? allLessonsList[currentLessonIdx + 1] 
+                : null;
               return (
                 <>
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <button
-                        type="button"
-                        onClick={handleBackToCourses}
-                        className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-orange-50 text-slate-700 hover:text-orange-600 font-bold text-xs transition border border-slate-200 flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
-                        title="Quay lại danh sách khóa học"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span className="hidden sm:inline">Quay lại</span>
-                      </button>
+                  {/* Main Classroom Workspace */}
+                  <div className="w-full flex flex-col lg:flex-row gap-6 items-start">
+                    {/* Left: Active Lesson / Video Theater - Giữ nguyên độ rộng A ~820px */}
+                    <div className="w-full lg:w-[820px] shrink-0 space-y-4">
+                      {courseDetailTab === 'LESSONS' ? (
+                        activeInteractiveLesson ? (
+                          <div className="space-y-4 animate-in fade-in duration-200">
+                            {/* Lesson Header Card */}
+                            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-3">
+                              {/* Breadcrumbs & Completion Button */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={handleBackToCourses}
+                                    className="font-semibold text-slate-600 hover:text-orange-600 transition cursor-pointer hover:underline"
+                                    title="Quay lại danh sách khóa học"
+                                  >
+                                    Khóa học
+                                  </button>
+                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                  <span className="text-orange-600 font-bold">{selectedCourseForDetail?.name || 'Khóa học'}</span>
+                                </div>
 
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h1 className="text-base sm:text-lg font-black text-slate-900 truncate">
-                            {activeCourse.name}
-                          </h1>
-                          {isProCourse ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
-                              <Crown className="w-3 h-3 text-amber-600" />
-                              <span>PRO</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              <span>Miễn phí</span>
-                            </span>
-                          )}
-                        </div>
-                        {activeCourse.description && (
-                          <p className="text-xs text-slate-500 truncate mt-0.5 max-w-2xl">
-                            {activeCourse.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* Main Classroom Workspace: Video Player + Playlist / Materials */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                    {/* Left: Video Player Theater & Active Lesson (8 cols) */}
-                    <div className="lg:col-span-8 space-y-4">
-                      <div className="bg-slate-950 rounded-3xl overflow-hidden border border-slate-800 shadow-xl flex flex-col">
-                        {/* Video Screen Area */}
-                        <div className="aspect-video w-full bg-black flex items-center justify-center relative">
-                          {activeLessonVideo ? (
-                            activeLessonVideo.sourceType === 'YOUTUBE' || activeLessonVideo.youtubeId ? (
-                              <iframe
-                                key={activeLessonVideo.id}
-                                src={`https://www.youtube-nocookie.com/embed/${getYoutubeEmbedId(activeLessonVideo)}?rel=0&modestbranding=1&autoplay=0`}
-                                title={activeLessonVideo.title}
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                allowFullScreen
-                                className="w-full h-full border-0 aspect-video"
-                              />
-                            ) : (
-                              <video
-                                key={activeLessonVideo.id}
-                                src={activeLessonVideo.storageUrl}
-                                poster={activeLessonVideo.thumbnailUrl}
-                                controls
-                                playsInline
-                                className="w-full h-full object-contain aspect-video"
-                              />
-                            )
-                          ) : (
-                            <div className="p-8 text-center space-y-3 text-slate-400">
-                              <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
-                                <Video className="w-8 h-8" />
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCompleteLesson(activeInteractiveLesson.id)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95 border ${
+                                    completedLessonIds.includes(activeInteractiveLesson.id)
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50'
+                                  }`}
+                                >
+                                    <CheckCircle2 className={`w-4 h-4 ${
+                                      completedLessonIds.includes(activeInteractiveLesson.id)
+                                        ? 'text-emerald-600 fill-emerald-100'
+                                        : 'text-slate-400'
+                                    }`} />
+                                    <span>{completedLessonIds.includes(activeInteractiveLesson.id) ? 'Đã hoàn thành' : 'Đánh dấu hoàn thành'}</span>
+                                  </button>
                               </div>
-                              <p className="font-bold text-slate-200 text-sm">Chưa có video bài giảng nào cho môn học này</p>
-                              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                                Giảng viên phụ trách bộ môn sẽ sớm cập nhật video bài giảng và học liệu trực tuyến.
-                              </p>
+
+                              {/* Lesson Title & Meta */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                                  {activeInteractiveLesson.title}
+                                </h2>
+                              </div>
+
+                              {/* Embedded Video (if lesson has videoUrl) */}
+                              {activeInteractiveLesson.videoUrl && (
+                                <div className="mt-3 aspect-video w-full rounded-2xl overflow-hidden bg-black border border-slate-200 shadow-sm relative">
+                                  {getYoutubeEmbedId(activeInteractiveLesson.videoUrl) ? (
+                                    <iframe
+                                      src={`https://www.youtube-nocookie.com/embed/${getYoutubeEmbedId(activeInteractiveLesson.videoUrl)}?rel=0&modestbranding=1&autoplay=0`}
+                                      title={activeInteractiveLesson.title}
+                                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                      allowFullScreen
+                                      className="w-full h-full border-0 aspect-video"
+                                    />
+                                  ) : (
+                                    <video
+                                      src={activeInteractiveLesson.videoUrl}
+                                      controls
+                                      playsInline
+                                      className="w-full h-full object-contain aspect-video"
+                                    />
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Reading Material Body (Hypertext Content) - Luôn giữ nguyên độ rộng đầy đủ của bài giảng */}
+                            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-xs">
+                              {activeInteractiveLesson.content && activeInteractiveLesson.content.trim() ? (
+                                <HypertextRenderer content={activeInteractiveLesson.content} />
+                              ) : (
+                                <div className="py-12 text-center text-slate-400 space-y-2">
+                                  <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+                                  <p className="text-sm font-bold text-slate-600">Bài học đang được cập nhật nội dung</p>
+                                  <p className="text-xs text-slate-400">Giảng viên sẽ sớm bổ sung các khối kiến thức cho bài học này.</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Bottom Lesson Navigation */}
+                            <div className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
+                              {prevLesson ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectLesson(prevLesson.lesson, prevLesson.chapter)}
+                                  className="px-4 py-2.5 rounded-xl border border-slate-200 hover:border-orange-300 hover:bg-orange-50/50 text-slate-700 hover:text-orange-700 text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+                                >
+                                  <ArrowLeft className="w-4 h-4" />
+                                  <span className="hidden sm:inline">Bài trước:</span>
+                                  <span className="max-w-[150px] truncate">{prevLesson.lesson.title}</span>
+                                </button>
+                              ) : (
+                                <div />
+                              )}
+
+                              {nextLesson ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectLesson(nextLesson.lesson, nextLesson.chapter)}
+                                  className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
+                                >
+                                  <span className="hidden sm:inline">Bài tiếp theo:</span>
+                                  <span className="max-w-[150px] truncate">{nextLesson.lesson.title}</span>
+                                  <ArrowRight className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={handleBackToCourses}
+                                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  <span>Hoàn tất khóa học</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs space-y-3">
+                            <BookOpen className="w-12 h-12 text-slate-300 mx-auto" />
+                            <h3 className="font-bold text-slate-800 text-base">Khóa học chưa có bài giảng số hóa nào</h3>
+                            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                              Giảng viên phụ trách đang biên soạn nội dung giáo trình cho khóa học này. Vui lòng quay lại sau!
+                            </p>
+                          </div>
+                        )
+                      ) : courseDetailTab === 'VIDEOS' ? (
+                        /* Video Player Mode */
+                        <div className="bg-slate-950 rounded-3xl overflow-hidden border border-slate-800 shadow-xl flex flex-col">
+                          <div className="aspect-video w-full bg-black flex items-center justify-center relative">
+                            {activeLessonVideo ? (
+                              activeLessonVideo.sourceType === 'YOUTUBE' || activeLessonVideo.youtubeId ? (
+                                <iframe
+                                  key={activeLessonVideo.id}
+                                  src={`https://www.youtube-nocookie.com/embed/${getYoutubeEmbedId(activeLessonVideo)}?rel=0&modestbranding=1&autoplay=0`}
+                                  title={activeLessonVideo.title}
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                  allowFullScreen
+                                  className="w-full h-full border-0 aspect-video"
+                                />
+                              ) : (
+                                <video
+                                  key={activeLessonVideo.id}
+                                  src={activeLessonVideo.storageUrl}
+                                  poster={activeLessonVideo.thumbnailUrl}
+                                  controls
+                                  playsInline
+                                  className="w-full h-full object-contain aspect-video"
+                                />
+                              )
+                            ) : (
+                              <div className="p-8 text-center space-y-3 text-slate-400">
+                                <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                                  <Video className="w-8 h-8" />
+                                </div>
+                                <p className="font-bold text-slate-200 text-sm">Chưa có video bài giảng nào cho môn học này</p>
+                                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                                  Giảng viên phụ trách bộ môn sẽ sớm cập nhật video bài giảng và học liệu trực tuyến.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {activeLessonVideo && (
+                            <div className="p-4 bg-slate-900/95 border-t border-slate-800/80">
+                              <h2 className="text-base font-bold text-white tracking-tight truncate">
+                                {activeLessonVideo.title}
+                              </h2>
                             </div>
                           )}
                         </div>
-
-                        {/* Under Player Lesson Info Bar */}
-                        {activeLessonVideo && (
-                          <div className="p-4 bg-slate-900/95 border-t border-slate-800/80">
-                            <h2 className="text-base font-bold text-white tracking-tight truncate">
-                              {activeLessonVideo.title}
-                            </h2>
+                      ) : (
+                        /* Documents Mode */
+                        <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs space-y-4">
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-5 h-5 text-orange-600" />
+                              <h3 className="font-bold text-slate-900 text-sm">Tài liệu học tập & Giáo trình đính kèm</h3>
+                            </div>
+                            <span className="text-xs text-slate-400">{courseDocs.length} tệp</span>
                           </div>
-                        )}
-                      </div>
+
+                          {courseDocs.length === 0 ? (
+                            <div className="py-12 text-center text-slate-400 space-y-2">
+                              <BookOpen className="w-10 h-10 text-slate-300 mx-auto" />
+                              <p className="text-sm font-bold text-slate-600">Chưa có tài liệu đính kèm</p>
+                              <p className="text-xs text-slate-400">Giáo trình tham khảo sẽ hiển thị ở đây.</p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {courseDocs.map((doc, idx) => (
+                                <div
+                                  key={doc.id}
+                                  className="p-4 rounded-2xl border border-slate-200 hover:border-orange-300 bg-white hover:bg-orange-50/20 transition-all flex flex-col justify-between gap-3 shadow-2xs"
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-orange-100/80 text-orange-700 flex items-center justify-center shrink-0">
+                                      <FileText className="w-5 h-5" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-bold text-xs text-slate-800 truncate" title={doc.filename}>
+                                        {doc.filename}
+                                      </p>
+                                      <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
+                                        <span className="uppercase font-mono font-bold text-slate-600">{doc.fileType}</span>
+                                        <span>•</span>
+                                        <span>{(doc.fileSizeBytes / 1024).toFixed(0)} KB</span>
+                                        {doc.pageCount && (
+                                          <>
+                                            <span>•</span>
+                                            <span>{doc.pageCount} trang</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate(`/documents/${doc.id}/generate`)}
+                                      className="w-full py-2 px-3 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5" />
+                                      <span>Luyện thi AI từ tài liệu này</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Right: Course Content (Playlist & Documents) (4 cols) */}
-                    <div className="lg:col-span-4 space-y-4">
-                      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
-                        {/* Tabs Switcher */}
-                        <div className="p-2 bg-slate-50/70 border-b border-slate-200/80 flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setCourseDetailTab('VIDEOS')}
-                            className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                              courseDetailTab === 'VIDEOS'
-                                ? 'bg-white text-indigo-700 shadow-sm border border-slate-200/80'
-                                : 'text-slate-500 hover:text-slate-800'
-                            }`}
-                          >
-                            <Video className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>Bài giảng ({courseVideos.length})</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCourseDetailTab('DOCUMENTS')}
-                            className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                              courseDetailTab === 'DOCUMENTS'
-                                ? 'bg-white text-orange-700 shadow-sm border border-slate-200/80'
-                                : 'text-slate-500 hover:text-slate-800'
-                            }`}
-                          >
-                            <BookOpen className="w-3.5 h-3.5 text-orange-600" />
-                            <span>Tài liệu ({courseDocs.length})</span>
-                          </button>
-                        </div>
+                    {/* Right: Course Content Sidebar OR SQL Sandbox (Chiếm toàn bộ diện tích bên phải vừa được để trống) */}
+                    <div className="w-full lg:flex-1 min-w-0 space-y-4">
+                      {showSqlPlayground ? (
+                        <div className="space-y-4">
+                          {/* Tabs Switcher: chuyển qua lại giữa Giáo trình và SQL Sandbox */}
+                          <div className="p-1.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCourseDetailTab('LESSONS');
+                                setShowSqlPlayground(false);
+                              }}
+                              className="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-50 cursor-pointer"
+                            >
+                              <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+                              <span>Giáo trình môn học</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowSqlPlayground(false)}
+                              className="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-orange-50 text-orange-700 border border-orange-200 shadow-xs cursor-pointer"
+                              title="Bấm để đóng SQL Sandbox và mở lại danh sách bài học"
+                            >
+                              <Terminal className="w-3.5 h-3.5 text-orange-600" />
+                              <span>SQL Sandbox (Đang mở)</span>
+                            </button>
+                          </div>
 
-                        {/* Tab Content */}
-                        <div className="p-4 max-h-[600px] overflow-y-auto space-y-3">
+                          {/* Khung Sandbox mở rộng chiếm toàn bộ diện tích còn lại */}
+                          <div className="h-[820px]">
+                            <SqlSandbox isEmbedded onClose={() => setShowSqlPlayground(false)} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+                          {/* Tabs Switcher */}
+                          <div className="p-2 bg-slate-50/70 border-b border-slate-200/80 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCourseDetailTab('LESSONS');
+                                setShowSqlPlayground(false);
+                              }}
+                              className="flex-1 py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-white text-orange-700 shadow-xs border border-slate-200/80 cursor-pointer"
+                            >
+                              <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+                              <span>Giáo trình</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowSqlPlayground(true)}
+                              className="flex-1 py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 cursor-pointer"
+                            >
+                              <Terminal className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>SQL Sandbox</span>
+                            </button>
+                          </div>
+
+                          {/* Tab Content */}
+                          <div className="p-4 max-h-[700px] overflow-y-auto space-y-3">
+                          {/* TAB 1: CURRICULUM (CHAPTERS & LESSONS) */}
+                          {courseDetailTab === 'LESSONS' && (
+                            courseChapters.length === 0 || totalLessonsCount === 0 ? (
+                              <div className="py-12 px-4 text-center space-y-2">
+                                <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+                                <p className="font-bold text-slate-700 text-xs">Chưa có bài giảng tương tác</p>
+                                <p className="text-[11px] text-slate-400">Các bài học theo khối sẽ sớm được cập nhật.</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {courseChapters.map((ch, chIdx) => {
+                                  const isExpanded = expandedChapterIds.includes(ch.id);
+                                  const chLessons = ch.lessons || [];
+                                  const completedInCh = chLessons.filter(l => completedLessonIds.includes(l.id)).length;
+                                  
+                                  return (
+                                    <div key={ch.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                                      {/* Chapter Header */}
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleExpandChapter(ch.id)}
+                                        className="w-full p-3 bg-slate-50/80 hover:bg-slate-100/80 transition flex items-center justify-between text-left cursor-pointer border-b border-slate-100"
+                                      >
+                                        <p className="font-bold text-xs text-slate-800 truncate pr-2">
+                                          {ch.title}
+                                        </p>
+                                        <div className="text-slate-400 shrink-0">
+                                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                        </div>
+                                      </button>
+
+                                      {/* Lessons List in Chapter */}
+                                      {isExpanded && (
+                                        <div className="p-2 space-y-1 bg-white">
+                                          {chLessons.map((ls) => {
+                                            const isCurrent = activeInteractiveLesson?.id === ls.id && courseDetailTab === 'LESSONS';
+                                            const isDone = completedLessonIds.includes(ls.id);
+                                            return (
+                                              <button
+                                                key={ls.id}
+                                                type="button"
+                                                onClick={() => handleSelectLesson(ls, ch)}
+                                                className={`w-full p-2.5 rounded-xl text-left transition flex items-center justify-between gap-2.5 cursor-pointer ${
+                                                  isCurrent
+                                                    ? 'bg-orange-50 border border-orange-300 text-orange-950 font-bold shadow-2xs'
+                                                    : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                                                }`}
+                                              >
+                                                <div className="min-w-0 flex-1">
+                                                  <p className={`text-xs truncate ${isCurrent ? 'font-black text-orange-900' : 'font-medium text-slate-800'}`}>
+                                                    {ls.title}
+                                                  </p>
+                                                  {ls.videoUrl && (
+                                                    <div className="flex items-center gap-1 text-[10px] text-indigo-600 font-semibold mt-0.5">
+                                                      <Video className="w-2.5 h-2.5" />
+                                                      <span>Video</span>
+                                                    </div>
+                                                  )}
+                                                </div>
+
+                                                <div className="shrink-0 flex items-center justify-center">
+                                                  {isDone ? (
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 fill-emerald-100" />
+                                                  ) : isCurrent ? (
+                                                    <span className="w-2 h-2 rounded-full bg-orange-600" />
+                                                  ) : null}
+                                                </div>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )
+                          )}
+
+                          {/* TAB 2: VIDEOS */}
                           {courseDetailTab === 'VIDEOS' && (
                             courseVideos.length === 0 ? (
                               <div className="py-12 px-4 text-center space-y-2">
                                 <Video className="w-8 h-8 text-slate-300 mx-auto" />
                                 <p className="font-bold text-slate-700 text-xs">Chưa có video bài giảng</p>
-                                <p className="text-[11px] text-slate-400">Các bài giảng số hóa sẽ sớm được cập nhật.</p>
+                                <p className="text-[11px] text-slate-400">Các bài giảng video sẽ sớm được cập nhật.</p>
                               </div>
                             ) : (
                               <div className="space-y-2">
@@ -579,6 +1032,7 @@ export const UserPage: React.FC = () => {
                             )
                           )}
 
+                          {/* TAB 3: DOCUMENTS */}
                           {courseDetailTab === 'DOCUMENTS' && (
                             courseDocs.length === 0 ? (
                               <div className="py-12 px-4 text-center space-y-2">
@@ -630,6 +1084,7 @@ export const UserPage: React.FC = () => {
                           )}
                         </div>
                       </div>
+                    )}
                     </div>
                   </div>
                 </>
@@ -668,14 +1123,11 @@ export const UserPage: React.FC = () => {
                 {USER_COURSE_TOPICS.map((topic) => {
                   const Icon = topic.icon;
                   const isSelected = selectedTopic === topic.id;
-                  const topicCount = topic.id === 'ALL' 
-                    ? courses.length 
-                    : courses.filter(c => c.topic === topic.id || c.department === topic.id).length;
                   return (
                     <button
                       key={topic.id}
                       onClick={() => setSelectedTopic(topic.id)}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
                         isSelected
                           ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/25'
                           : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80 shadow-2xs'
@@ -683,59 +1135,50 @@ export const UserPage: React.FC = () => {
                     >
                       <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-orange-500'}`} />
                       <span className="whitespace-nowrap">{topic.name}</span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                        isSelected ? 'bg-orange-700/60 text-white' : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {topicCount}
-                      </span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Row 3: Active Filters & Results Summary Bar */}
-              <div className="flex items-center justify-between gap-3 flex-wrap bg-white/70 backdrop-blur-xs px-3.5 py-2 rounded-xl border border-slate-200/70 text-xs">
-                <div className="flex items-center gap-2 flex-wrap text-slate-500">
-                  <span className="font-semibold text-slate-700">
-                    Hiển thị <span className="text-orange-600 font-bold">{filteredCourses.length}</span> / {courses.length} môn học
-                  </span>
+              {/* Row 3: Active Filter Chips & Reset Bar (Only shown when filters are active) */}
+              {isCourseFilterActive && (
+                <div className="flex items-center justify-between gap-3 flex-wrap bg-white/70 backdrop-blur-xs px-3.5 py-2 rounded-xl border border-slate-200/70 text-xs">
+                  <div className="flex items-center gap-2 flex-wrap text-slate-500">
+                    {/* Active Chips */}
+                    {selectedTopic !== 'ALL' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-semibold">
+                        Chủ đề: {selectedTopic}
+                        <button onClick={() => setSelectedTopic('ALL')} className="hover:text-orange-950 cursor-pointer">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                    {selectedPricing !== 'ALL' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
+                        Gói: {selectedPricing === 'FREE' ? 'Miễn phí' : selectedPricing === 'PRO' ? 'PRO VIP' : 'Sắp ra mắt'}
+                        <button onClick={() => setSelectedPricing('ALL')} className="hover:text-amber-950 cursor-pointer">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                    {selectedMaterial !== 'ALL' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-semibold">
+                        {selectedMaterial === 'VIDEO' ? 'Có Video bài giảng' : 'Có Giáo trình PDF'}
+                        <button onClick={() => setSelectedMaterial('ALL')} className="hover:text-orange-950 cursor-pointer">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                    {searchQuery.trim() && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold">
+                        Từ khóa: "{searchQuery}"
+                        <button onClick={() => setSearchQuery('')} className="hover:text-slate-900 cursor-pointer">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
 
-                  {/* Active Chips */}
-                  {selectedTopic !== 'ALL' && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-semibold">
-                      Chủ đề: {selectedTopic}
-                      <button onClick={() => setSelectedTopic('ALL')} className="hover:text-orange-950 cursor-pointer">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  )}
-                  {selectedPricing !== 'ALL' && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
-                      Gói: {selectedPricing === 'FREE' ? 'Miễn phí' : 'PRO VIP'}
-                      <button onClick={() => setSelectedPricing('ALL')} className="hover:text-amber-950 cursor-pointer">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  )}
-                  {selectedMaterial !== 'ALL' && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-semibold">
-                      {selectedMaterial === 'VIDEO' ? 'Có Video bài giảng' : 'Có Giáo trình PDF'}
-                      <button onClick={() => setSelectedMaterial('ALL')} className="hover:text-orange-950 cursor-pointer">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  )}
-                  {searchQuery.trim() && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold">
-                      Từ khóa: "{searchQuery}"
-                      <button onClick={() => setSearchQuery('')} className="hover:text-slate-900 cursor-pointer">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  )}
-                </div>
-
-                {isCourseFilterActive && (
                   <button
                     onClick={handleResetCourseFilters}
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-600 hover:text-orange-700 hover:underline cursor-pointer ml-auto"
@@ -743,8 +1186,8 @@ export const UserPage: React.FC = () => {
                     <RotateCcw className="w-3 h-3" />
                     <span>Đặt lại tất cả</span>
                   </button>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Courses Grid */}
               {isLoading ? (
@@ -770,6 +1213,7 @@ export const UserPage: React.FC = () => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filteredCourses.map((c) => {
+                    const isDraft = c.status === 'draft';
                     const isProTier = c.isFreeTier === false || c.tierRequired === 'PRO';
                     const isUserPro = currentUser?.tier === 'PRO';
                     const canAccess = !isProTier || isUserPro;
@@ -779,13 +1223,20 @@ export const UserPage: React.FC = () => {
                     return (
                       <div
                         key={c.id}
-                        className="p-5 rounded-2xl bg-white border border-slate-200/90 hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
+                        className={`p-5 rounded-2xl bg-white border border-slate-200/90 transition-all flex flex-col justify-between space-y-4 group ${
+                          isDraft ? 'hover:border-violet-300 hover:shadow-sm' : 'hover:border-orange-300 hover:shadow-md'
+                        }`}
                       >
                         <div className="space-y-2.5">
                           {/* Badges Row */}
                           <div className="flex items-center justify-between gap-1.5 flex-wrap">
                             <div className="flex items-center gap-1.5">
-                              {isProTier ? (
+                              {isDraft ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 shadow-2xs">
+                                  <Sparkles className="w-3 h-3 text-violet-600" />
+                                  <span>Sắp ra mắt</span>
+                                </span>
+                              ) : isProTier ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
                                   <Crown className="w-3 h-3 text-amber-600" />
                                   <span>Gói PRO VIP</span>
@@ -804,7 +1255,9 @@ export const UserPage: React.FC = () => {
                           </div>
 
                           {/* Title */}
-                          <h3 className="text-sm font-bold text-slate-900 group-hover:text-orange-600 transition-colors line-clamp-2 leading-snug">
+                          <h3 className={`text-sm font-bold text-slate-900 line-clamp-2 leading-snug transition-colors ${
+                            isDraft ? 'group-hover:text-violet-700' : 'group-hover:text-orange-600'
+                          }`}>
                             {c.name}
                           </h3>
 
@@ -841,7 +1294,16 @@ export const UserPage: React.FC = () => {
                           <span className="text-[11px] font-mono text-slate-400">
                             {c.code}
                           </span>
-                          {canAccess ? (
+                          {isDraft ? (
+                            <button
+                              disabled
+                              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200/80 cursor-not-allowed flex items-center gap-1.5 select-none"
+                              title="Khóa học đang được biên soạn nội dung, sắp ra mắt!"
+                            >
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Sắp ra mắt</span>
+                            </button>
+                          ) : canAccess ? (
                             <button
                               onClick={() => handleOpenCourse(c)}
                               className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-orange-50 hover:bg-orange-600 text-orange-700 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-[0.98]"
@@ -909,12 +1371,17 @@ export const UserPage: React.FC = () => {
                       { 
                         id: 'FREE', 
                         label: 'Miễn phí (Free)', 
-                        count: courses.filter(c => c.isFreeTier !== false && c.tierRequired !== 'PRO').length
+                        count: courses.filter(c => c.status !== 'draft' && c.isFreeTier !== false && c.tierRequired !== 'PRO').length
                       },
                       { 
                         id: 'PRO', 
                         label: 'Gói PRO VIP', 
-                        count: courses.filter(c => c.isFreeTier === false || c.tierRequired === 'PRO').length
+                        count: courses.filter(c => c.status !== 'draft' && (c.isFreeTier === false || c.tierRequired === 'PRO')).length
+                      },
+                      {
+                        id: 'UPCOMING',
+                        label: 'Sắp ra mắt',
+                        count: courses.filter(c => c.status === 'draft').length
                       },
                     ].map((opt) => {
                       const isSelected = selectedPricing === opt.id;
@@ -1572,7 +2039,14 @@ export const UserPage: React.FC = () => {
               </div>
 
               <button
-                onClick={() => setIsUpgradeModalOpen(true)}
+                onClick={() => {
+                  const paymentSrv = maintenanceServices.find(s => s.key === 'payment');
+                  if (paymentSrv) {
+                    setShowPaymentMaintenanceModal(true);
+                  } else {
+                    setIsUpgradeModalOpen(true);
+                  }
+                }}
                 className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-orange-600/20 hover:from-amber-600 hover:to-orange-700 transition cursor-pointer flex items-center gap-2"
               >
                 <Crown className="w-4 h-4 text-amber-200" />
@@ -1703,6 +2177,59 @@ export const UserPage: React.FC = () => {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Payment Maintenance Modal */}
+      {showPaymentMaintenanceModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-100 text-amber-700">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Dịch Vụ Thanh Toán Đang Bảo Trì</h3>
+                  <p className="text-xs text-slate-500">Cổng thanh toán tạm thời đóng giao dịch</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPaymentMaintenanceModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/80 text-xs text-amber-900 space-y-1.5">
+              <p className="font-semibold">
+                {maintenanceServices.find(s => s.key === 'payment')?.message ||
+                  'Cổng thanh toán đang được bảo trì nâng cấp kết nối ngân hàng và ví điện tử.'}
+              </p>
+              {maintenanceServices.find(s => s.key === 'payment')?.estimatedEndTime && (
+                <p className="text-slate-600">
+                  Thời gian hoàn tất dự kiến:{' '}
+                  <span className="font-bold text-amber-800">
+                    {maintenanceServices.find(s => s.key === 'payment')?.estimatedEndTime}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Các tính năng nâng cấp gói, gia hạn và thanh toán giao dịch sẽ tạm dừng trong ít phút. Quý khách hàng đã có gói PRO vẫn tiếp tục sử dụng học tập bình thường mà không bị ảnh hưởng.
+            </p>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setShowPaymentMaintenanceModal(false)}
+                className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition cursor-pointer"
+              >
+                Tôi đã hiểu
+              </button>
+            </div>
           </div>
         </div>
       )}

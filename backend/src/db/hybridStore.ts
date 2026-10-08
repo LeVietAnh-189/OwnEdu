@@ -13,6 +13,7 @@ import {
   TokenUsageLog,
   VideoItem,
   GenerationProgressEvent,
+  SystemServiceConfig,
   PaymentOrder,
   PaymentPlan,
   PaymentPlanId,
@@ -24,6 +25,53 @@ export interface SystemSettings {
   openaiApiKey?: string;
   activeModel: 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'gpt-4o-mini' | 'offline-smart';
 }
+
+export const DEFAULT_SYSTEM_SERVICES: SystemServiceConfig[] = [
+  {
+    id: 'author-svc',
+    name: 'Author Service',
+    key: 'auth',
+    port: 3001,
+    status: 'RUNNING',
+    description: 'Xác thực tài khoản, kiểm soát phiên đăng nhập JWT & phân quyền Super Admin / Admin',
+    maintenanceMessage: 'Hệ thống xác thực tài khoản đang bảo trì định kỳ. Các phiên đăng nhập hiện tại vẫn hoạt động bình thường.',
+    estimatedEndTime: '',
+    allowAdminBypass: true
+  },
+  {
+    id: 'payment-svc',
+    name: 'Payment Service',
+    key: 'payment',
+    port: 3002,
+    status: 'RUNNING',
+    description: 'Cổng thanh toán học phí, đăng ký gói Pro và đối soát hóa đơn giao dịch',
+    maintenanceMessage: 'Cổng thanh toán đang bảo trì định kỳ để nâng cấp kênh thanh toán. Các khóa học đã sở hữu vẫn học bình thường.',
+    estimatedEndTime: '',
+    allowAdminBypass: true
+  },
+  {
+    id: 'product-svc',
+    name: 'Product Service',
+    key: 'product',
+    port: 3003,
+    status: 'RUNNING',
+    description: 'Quản lý danh mục khóa học, kho giáo trình và đề thi khảo thí thông minh',
+    maintenanceMessage: 'Hệ thống khóa học và đề thi đang trong quá trình đồng bộ dữ liệu bảo trì.',
+    estimatedEndTime: '',
+    allowAdminBypass: true
+  },
+  {
+    id: 'cart-svc',
+    name: 'Cart Service',
+    key: 'cart',
+    port: 3004,
+    status: 'RUNNING',
+    description: 'Giỏ hàng đăng ký môn học, tiến độ học tập và lưu vết bài thi của học viên',
+    maintenanceMessage: 'Hệ thống giỏ hàng & đăng ký môn học đang bảo trì hệ thống.',
+    estimatedEndTime: '',
+    allowAdminBypass: true
+  }
+];
 
 export const DEFAULT_PAYMENT_PLANS: PaymentPlan[] = [
   {
@@ -82,6 +130,7 @@ interface DatabaseSchema {
   courses?: Course[];
   videos?: VideoItem[];
   tokenLogs?: TokenUsageLog[];
+  services?: SystemServiceConfig[];
   paymentOrders?: PaymentOrder[];
   activeUserId?: string;
 }
@@ -178,6 +227,9 @@ export class HybridStore {
             openaiApiKey: process.env.OPENAI_API_KEY || '',
             activeModel: (process.env.GEMINI_API_KEY ? 'gemini-1.5-flash' : 'offline-smart') as any
           };
+        }
+        if (!parsed.services || parsed.services.length === 0) {
+          parsed.services = JSON.parse(JSON.stringify(DEFAULT_SYSTEM_SERVICES));
         }
         if (!parsed.paymentOrders) {
           parsed.paymentOrders = [];
@@ -623,6 +675,34 @@ export class HybridStore {
     this.data.settings = { ...current, ...updates };
     this.persist();
     return this.data.settings;
+  }
+
+  // --- System Services Maintenance ---
+  public getServices(): SystemServiceConfig[] {
+    if (!this.data.services || this.data.services.length === 0) {
+      this.data.services = JSON.parse(JSON.stringify(DEFAULT_SYSTEM_SERVICES));
+      this.persist();
+    }
+    return this.data.services || [];
+  }
+
+  public getServiceByKey(key: string): SystemServiceConfig | undefined {
+    return this.getServices().find(s => s.key === key || s.id === key);
+  }
+
+  public updateService(id: string, updates: Partial<SystemServiceConfig>): SystemServiceConfig | null {
+    const services = this.getServices();
+    const index = services.findIndex(s => s.id === id || s.key === id);
+    if (index === -1) return null;
+
+    services[index] = {
+      ...services[index],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    this.data.services = services;
+    this.persist();
+    return services[index];
   }
 
   // --- Courses Management (Admin) ---
@@ -1138,7 +1218,9 @@ export class HybridStore {
       documentChunks: [],
       exams: [],
       examAttempts: [],
-      gradeReports: []
+      gradeReports: [],
+      services: JSON.parse(JSON.stringify(DEFAULT_SYSTEM_SERVICES)),
+      paymentOrders: []
     };
   }
 }

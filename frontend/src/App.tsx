@@ -9,6 +9,7 @@ import { ExamReviewPage } from './pages/ExamReviewPage';
 import { ExamRoomPage } from './pages/ExamRoomPage';
 import { ExamResultPage } from './pages/ExamResultPage';
 import { AdminPage } from './pages/AdminPage';
+import { AdminLessonEditorPage } from './pages/AdminLessonEditorPage';
 import { UserPage } from './pages/UserPage';
 import { LandingPage } from './pages/LandingPage';
 
@@ -25,6 +26,9 @@ export const App: React.FC = () => {
 
           {/* Dedicated Admin Console Layout */}
           <Route path="/admin" element={<AdminPage />} />
+
+          {/* Dedicated Full-Page Hypertext Lesson Editor */}
+          <Route path="/admin/courses/:courseId/chapters/:chapterId/lessons/:lessonId" element={<AdminLessonEditorPage />} />
 
           {/* Unified Workspace with Permanent Left Sidebar Menu */}
           <Route element={<UserLayout />}>
