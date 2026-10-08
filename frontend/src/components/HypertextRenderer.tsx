@@ -394,7 +394,69 @@ export const HypertextRenderer: React.FC<HypertextRendererProps> = ({ content, c
         continue;
       }
 
-      // 8. Normal Paragraph or Empty Line
+      // 8. Markdown Table (| Col 1 | Col 2 |)
+      if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1].trim();
+          const isSep = nextLine.startsWith('|') && nextLine.endsWith('|') && nextLine.slice(1, -1).split('|').every(c => /^[\s:-]+$/.test(c) && c.includes('-'));
+          if (isSep) {
+            const rawHeaders = line.trim().slice(1, -1).split('|').map(s => s.trim());
+            const sepCells = nextLine.slice(1, -1).split('|').map(s => s.trim());
+            const alignments: ('left' | 'center' | 'right')[] = sepCells.map(c => {
+              const hasLeft = c.startsWith(':');
+              const hasRight = c.endsWith(':');
+              if (hasLeft && hasRight) return 'center';
+              if (hasRight) return 'right';
+              return 'left';
+            });
+
+            i += 2; // skip header line and separator line
+            const tableRows: string[][] = [];
+            while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+              const rowCells = lines[i].trim().slice(1, -1).split('|').map(s => s.trim());
+              while (rowCells.length < rawHeaders.length) rowCells.push('');
+              tableRows.push(rowCells.slice(0, rawHeaders.length));
+              i++;
+            }
+
+            blocks.push(
+              <div key={`table-${blockId++}`} className="my-5 overflow-x-auto rounded-2xl border border-slate-200 shadow-2xs bg-white">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-100/90 border-b border-slate-200">
+                      {rawHeaders.map((headerText, colIdx) => (
+                        <th
+                          key={`th-${colIdx}`}
+                          className="px-4 py-3 font-bold text-slate-800 tracking-wide text-xs uppercase text-center border-l border-slate-200 first:border-l-0"
+                        >
+                          {renderInline(headerText)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {tableRows.map((r, rIdx) => (
+                      <tr key={`tr-${rIdx}`} className="hover:bg-slate-50/70 transition-colors">
+                        {r.map((cellText, colIdx) => (
+                          <td
+                            key={`td-${rIdx}-${colIdx}`}
+                            className="px-4 py-2.5 text-slate-700 text-sm text-left border-l border-slate-100 first:border-l-0"
+                          >
+                            {renderInline(cellText)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+            continue;
+          }
+        }
+      }
+
+      // 9. Normal Paragraph or Empty Line
       if (line.trim().length === 0) {
         // Empty line
         i++;
@@ -413,7 +475,8 @@ export const HypertextRenderer: React.FC<HypertextRendererProps> = ({ content, c
         !lines[i].trim().startsWith('- ') &&
         !lines[i].trim().startsWith('* ') &&
         !/^\d+\.\s/.test(lines[i].trim()) &&
-        lines[i].trim() !== '---'
+        lines[i].trim() !== '---' &&
+        !lines[i].trim().startsWith('|')
       ) {
         pLines.push(lines[i]);
         i++;

@@ -12,9 +12,12 @@ import {
   Crown,
   Layers,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   X
 } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
+import { useLayoutStore } from '../../store/layoutStore';
 import { ProUpgradeModal } from '../payment/ProUpgradeModal';
 
 export type UserTabKey = 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'profile';
@@ -33,6 +36,7 @@ export const UserLayout: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { currentUser, switchRole, isLoading: isUserLoading, fetchCurrentUser } = useUserStore();
+  const { isSidebarCollapsed, toggleSidebar } = useLayoutStore();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState<boolean>(false);
@@ -189,17 +193,56 @@ export const UserLayout: React.FC = () => {
     );
   };
 
-  const renderSidebarContent = () => (
+  const renderSidebarContent = (collapsed: boolean = false) => (
     <div className="flex flex-col justify-between h-full space-y-6">
-      <div className="space-y-4">
-        <div className="px-3 text-[11px] font-black uppercase tracking-wider text-slate-400">
-          Menu Học Tập
+      <div className="space-y-3">
+        {/* Header / Collapse toggle row */}
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between px-2'} mb-1`}>
+          {!collapsed && (
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+              Menu Học Tập
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="hidden md:flex p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+            title={collapsed ? "Mở rộng thanh menu" : "Thu gọn thanh menu"}
+          >
+            {collapsed ? <PanelLeftOpen className="w-4 h-4 text-orange-600" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
         </div>
 
         <nav className="space-y-1.5">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
+
+            if (collapsed) {
+              return (
+                <div key={item.id} className="relative group flex justify-center">
+                  <Link
+                    to={item.path}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/30'
+                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </Link>
+                  {/* Floating tooltip */}
+                  <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 flex items-center gap-1.5">
+                    <span>{item.label}</span>
+                    {item.badge && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-500 text-slate-900">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <Link
@@ -242,36 +285,50 @@ export const UserLayout: React.FC = () => {
       </div>
 
       {/* Bottom Card: Membership Widget */}
-      <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-50/80 via-amber-50/40 to-orange-50/60 border border-orange-200/90 space-y-2.5">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <Crown className="w-4 h-4 text-amber-500 shrink-0" />
-            <span className="text-xs font-black text-slate-900">
-              {currentUser?.tier === 'PRO' ? 'Gói Pro VIP Sinh Viên' : 'Tài Khoản Miễn Phí'}
-            </span>
-          </div>
-          <div className="flex items-center">
-            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${currentUser?.tier === 'PRO'
-                ? 'bg-amber-100 text-amber-800 border-amber-300'
-                : 'bg-slate-100 text-slate-600 border-slate-200'
-              }`}>
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${currentUser?.tier === 'PRO' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-              {currentUser?.tier === 'PRO' ? 'Đang kích hoạt' : 'Hạn chế 3 đề/ngày'}
-            </span>
+      {collapsed ? (
+        <div className="relative group flex justify-center py-2">
+          <button
+            onClick={() => setIsUpgradeModalOpen(true)}
+            className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-orange-100 border border-orange-200/90 flex items-center justify-center text-amber-600 hover:text-amber-700 shadow-xs hover:scale-105 transition-all cursor-pointer"
+          >
+            <Crown className="w-4 h-4 text-amber-500" />
+          </button>
+          <div className="absolute left-full ml-3 bottom-2 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+            {currentUser?.tier === 'PRO' ? 'Gói Pro VIP Sinh Viên' : 'Nâng cấp Pro VIP'}
           </div>
         </div>
-        <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
-          {currentUser?.tier === 'PRO'
-            ? 'Không giới hạn bóc tách tài liệu & sinh bộ đề thi chuẩn Bloom Taxonomy AI.'
-            : 'Nâng cấp ngay qua VietQR để mở khóa không giới hạn AI & bài giảng Video R2.'}
-        </p>
-        <button
-          onClick={() => setIsUpgradeModalOpen(true)}
-          className="w-full py-1.5 text-center text-xs font-bold text-orange-700 hover:text-orange-800 bg-white/90 hover:bg-white rounded-xl border border-orange-200 shadow-xs transition cursor-pointer"
-        >
-          {currentUser?.tier === 'PRO' ? 'Xem chi tiết & Gia hạn' : 'Nâng cấp Pro VIP ngay'}
-        </button>
-      </div>
+      ) : (
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-50/80 via-amber-50/40 to-orange-50/60 border border-orange-200/90 space-y-2.5">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Crown className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="text-xs font-black text-slate-900">
+                {currentUser?.tier === 'PRO' ? 'Gói Pro VIP Sinh Viên' : 'Tài Khoản Miễn Phí'}
+              </span>
+            </div>
+            <div className="flex items-center">
+              <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${currentUser?.tier === 'PRO'
+                  ? 'bg-amber-100 text-amber-800 border-amber-300'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}>
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${currentUser?.tier === 'PRO' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                {currentUser?.tier === 'PRO' ? 'Đang kích hoạt' : 'Hạn chế 3 đề/ngày'}
+              </span>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
+            {currentUser?.tier === 'PRO'
+              ? 'Không giới hạn bóc tách tài liệu & sinh bộ đề thi chuẩn Bloom Taxonomy AI.'
+              : 'Nâng cấp ngay qua VietQR để mở khóa không giới hạn AI & bài giảng Video R2.'}
+          </p>
+          <button
+            onClick={() => setIsUpgradeModalOpen(true)}
+            className="w-full py-1.5 text-center text-xs font-bold text-orange-700 hover:text-orange-800 bg-white/90 hover:bg-white rounded-xl border border-orange-200 shadow-xs transition cursor-pointer"
+          >
+            {currentUser?.tier === 'PRO' ? 'Xem chi tiết & Gia hạn' : 'Nâng cấp Pro VIP ngay'}
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -387,9 +444,11 @@ export const UserLayout: React.FC = () => {
 
       {/* 2. MAIN BODY (Sidebar luôn ở bên trái, Content bên phải) */}
       <div className="flex-1 w-full flex items-stretch relative">
-        {/* DESKTOP SIDEBAR: Luôn cố định bên cạnh, KHÔNG BAO GIỜ BỊ MẤT */}
-        <aside className="hidden md:flex w-64 lg:w-72 border-r border-slate-200/80 bg-white shrink-0 p-4 sticky top-16 h-[calc(100vh-64px)] overflow-y-auto">
-          {renderSidebarContent()}
+        {/* DESKTOP SIDEBAR: Thu gọn khi mở SQL sandbox hoặc bấm nút toggle */}
+        <aside className={`hidden md:flex flex-col justify-between border-r border-slate-200/80 bg-white shrink-0 sticky top-16 h-[calc(100vh-64px)] overflow-y-auto transition-[width,padding] duration-200 ease-out will-change-[width] ${
+          isSidebarCollapsed ? 'w-16 p-2.5' : 'w-64 lg:w-72 p-4'
+        }`}>
+          {renderSidebarContent(isSidebarCollapsed)}
         </aside>
 
         {/* MOBILE SIDEBAR DRAWER */}
@@ -409,7 +468,7 @@ export const UserLayout: React.FC = () => {
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              {renderSidebarContent()}
+              {renderSidebarContent(false)}
             </aside>
           </div>
         )}

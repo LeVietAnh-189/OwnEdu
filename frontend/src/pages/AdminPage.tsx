@@ -1760,9 +1760,6 @@ export const AdminPage: React.FC = () => {
                             <h4 className="font-bold text-sm text-slate-900">
                               Cấu Trúc Chương Trình Bài Giảng
                             </h4>
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">
-                              {newCourseChapters.length} chương • {newCourseChapters.reduce((acc, ch) => acc + (ch.lessons?.length || 0), 0)} bài học
-                            </span>
                           </div>
                           <p className="text-xs text-slate-500">
                             Khởi tạo danh sách chương và bài học. Sau khi tạo khóa học, bạn có thể click <strong>Soạn bài</strong> để viết nội dung bằng cách thêm các khối (đoạn văn, tiêu đề, khung bản lề, ảnh từ máy tính, video, code).
@@ -1800,10 +1797,6 @@ export const AdminPage: React.FC = () => {
                                   placeholder={`Tên chương ${chIdx + 1}...`}
                                   className="px-3 py-1.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-orange-500 rounded-xl text-xs font-bold text-slate-900 focus:outline-none flex-1 max-w-lg transition shadow-2xs"
                                 />
-
-                                <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
-                                  {chapter.lessons?.length || 0} bài học
-                                </span>
                               </div>
 
                               <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
@@ -1846,18 +1839,6 @@ export const AdminPage: React.FC = () => {
                                       placeholder={`Tên bài học ${lIdx + 1}...`}
                                       className="px-2.5 py-1 bg-white border border-slate-200 focus:border-orange-500 rounded-lg text-xs font-bold text-slate-800 focus:outline-none flex-1 max-w-md transition shadow-2xs"
                                     />
-                                    <div className="flex items-center gap-1 shrink-0 text-slate-400">
-                                      <Clock className="w-3 h-3 text-slate-400" />
-                                      <input
-                                        type="number"
-                                        min={1}
-                                        max={360}
-                                        value={lesson.durationMinutes || 15}
-                                        onChange={(e) => handleUpdateNewCourseLessonDuration(chapter.id, lesson.id, Number(e.target.value))}
-                                        className="w-14 px-1.5 py-0.5 bg-white border border-slate-200 rounded text-center text-xs font-mono font-semibold"
-                                      />
-                                      <span className="text-[10px]">phút</span>
-                                    </div>
                                   </div>
 
                                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
@@ -3541,40 +3522,10 @@ export const AdminPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setEditMaterialTab('CURRICULUM')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
-                  editMaterialTab === 'CURRICULUM'
-                    ? 'bg-orange-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 bg-orange-600 text-white shadow-xs"
               >
                 <Layers className="w-3.5 h-3.5" />
-                <span>
-                  Chương trình bài giảng ({editCourseChapters.reduce((acc, ch) => acc + (ch.lessons?.length || 0), 0)} bài)
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditMaterialTab('DOCUMENTS')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
-                  editMaterialTab === 'DOCUMENTS'
-                    ? 'bg-orange-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Tài liệu tham khảo ({editCourseDocIds.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditMaterialTab('VIDEOS')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
-                  editMaterialTab === 'VIDEOS'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <Video className="w-3.5 h-3.5" />
-                <span>Video kho ({editCourseVideoIds.length})</span>
+                <span>Chương trình bài giảng</span>
               </button>
             </div>
 
@@ -3679,10 +3630,6 @@ export const AdminPage: React.FC = () => {
                                   </button>
                                 </div>
                               )}
-
-                              <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
-                                {chapter.lessons?.length || 0} bài học
-                              </span>
                             </div>
 
                             {/* Chapter Actions */}
@@ -3728,7 +3675,6 @@ export const AdminPage: React.FC = () => {
                                         {lesson.title}
                                       </p>
                                       <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                                        <span>{lesson.durationMinutes || 15} phút</span>
                                         {lesson.videoUrl && (
                                           <span className="text-indigo-600 font-semibold flex items-center gap-0.5">
                                             &bull; Có video

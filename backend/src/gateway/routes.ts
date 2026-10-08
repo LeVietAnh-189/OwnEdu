@@ -893,7 +893,7 @@ apiRouter.get('/admin/courses', (req, res) => {
 });
 
 apiRouter.get('/courses', (req, res) => {
-  const courses = db.getCourses().filter(c => c.status !== 'draft');
+  const courses = db.getCourses();
   return successResponse(res, courses);
 });
 

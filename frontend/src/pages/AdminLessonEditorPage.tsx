@@ -33,13 +33,27 @@ import {
   Film,
   Globe,
   EyeOff,
-  FileEdit
+  FileEdit,
+  Table,
+  StickyNote,
+  AlignCenter,
+  AlignRight,
+  Bold,
+  Minus,
+  X
 } from 'lucide-react';
 import { AdminAPI, VideoAPI, ImageAPI } from '../services/api';
 import { Course, Chapter, Lesson, VideoItem } from '../types';
 import { HypertextRenderer } from '../components/HypertextRenderer';
 
-export type BlockType = 'heading' | 'paragraph' | 'callout' | 'code' | 'image' | 'video';
+export type BlockType = 'heading' | 'paragraph' | 'callout' | 'code' | 'image' | 'video' | 'table';
+
+export interface EditorTableData {
+  headers: string[];
+  rows: string[][];
+  alignments: ('left' | 'center' | 'right')[];
+  isHeaderBold?: boolean;
+}
 
 export interface EditorBlock {
   id: string;
@@ -55,6 +69,7 @@ export interface EditorBlock {
   imageCaption?: string;
   videoUrl?: string;
   videoCaption?: string;
+  tableData?: EditorTableData;
 }
 
 const extractYoutubeId = (url: string): string | null => {
@@ -181,7 +196,56 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
       continue;
     }
 
-    // 5. Paragraph
+    // 5. Table block (| Header 1 | Header 2 |)
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      if (i + 1 < lines.length) {
+        const nextLine = lines[i + 1].trim();
+        const isSep = nextLine.startsWith('|') && nextLine.endsWith('|') && nextLine.slice(1, -1).split('|').every(c => /^[\s:-]+$/.test(c) && c.includes('-'));
+        if (isSep) {
+          const rawHeaders = line.trim().slice(1, -1).split('|').map(s => s.trim());
+          const sepCells = nextLine.slice(1, -1).split('|').map(s => s.trim());
+          const alignments: ('left' | 'center' | 'right')[] = sepCells.map(c => {
+            const hasLeft = c.startsWith(':');
+            const hasRight = c.endsWith(':');
+            if (hasLeft && hasRight) return 'center';
+            if (hasRight) return 'right';
+            return 'left';
+          });
+
+          let isHeaderBold = false;
+          const headers = rawHeaders.map(h => {
+            if (h.startsWith('**') && h.endsWith('**') && h.length >= 4) {
+              isHeaderBold = true;
+              return h.slice(2, -2).trim();
+            }
+            return h;
+          });
+
+          i += 2;
+          const rows: string[][] = [];
+          while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+            const rowCells = lines[i].trim().slice(1, -1).split('|').map(s => s.trim());
+            while (rowCells.length < headers.length) rowCells.push('');
+            rows.push(rowCells.slice(0, headers.length));
+            i++;
+          }
+
+          blocks.push({
+            id: `blk_${Date.now()}_${counter++}`,
+            type: 'table',
+            tableData: {
+              headers: headers.length > 0 ? headers : ['', ''],
+              rows: rows.length > 0 ? rows : [Array(headers.length || 2).fill('')],
+              alignments: alignments.length === headers.length ? alignments : Array(headers.length || 2).fill('center'),
+              isHeaderBold
+            }
+          });
+          continue;
+        }
+      }
+    }
+
+    // 6. Paragraph
     if (line.trim().length === 0) {
       i++;
       continue;
@@ -195,7 +259,8 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
       !lines[i].trim().startsWith(':::') &&
       !lines[i].trim().startsWith('```') &&
       !lines[i].startsWith('#') &&
-      !lines[i].trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
+      !lines[i].trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/) &&
+      !lines[i].trim().startsWith('|')
     ) {
       pLines.push(lines[i]);
       i++;
@@ -242,6 +307,32 @@ const serializeBlocksToMarkdown = (blocks: EditorBlock[]): string => {
         const caption = block.videoCaption ? ` ${block.videoCaption.trim()}` : '';
         parts.push(`:::video${caption}\n${block.videoUrl.trim()}\n:::`);
       }
+    } else if (block.type === 'table' && block.tableData) {
+      const { headers = [], rows = [], alignments = [], isHeaderBold = true } = block.tableData;
+      if (headers.length > 0) {
+        const colCount = headers.length;
+        const formattedHeaders = headers.map(h => {
+          const clean = (h || '').trim();
+          if (!clean) return ' ';
+          return isHeaderBold ? `**${clean}**` : clean;
+        });
+        const headerLine = `| ${formattedHeaders.join(' | ')} |`;
+
+        const alignCells = Array.from({ length: colCount }).map((_, cIdx) => {
+          const align = alignments[cIdx] || 'left';
+          if (align === 'center') return ':---:';
+          if (align === 'right') return '---:';
+          return ':---';
+        });
+        const alignLine = `| ${alignCells.join(' | ')} |`;
+
+        const rowLines = rows.map(r => {
+          const cells = Array.from({ length: colCount }).map((_, cIdx) => (r[cIdx] || '').trim() || ' ');
+          return `| ${cells.join(' | ')} |`;
+        });
+
+        parts.push([headerLine, alignLine, ...rowLines].join('\n'));
+      }
     }
   }
 
@@ -264,6 +355,13 @@ export const AdminLessonEditorPage: React.FC = () => {
   const [blocks, setBlocks] = useState<EditorBlock[]>([]);
   const [rawContent, setRawContent] = useState<string>('');
   const [isPublishingCourse, setIsPublishingCourse] = useState<boolean>(false);
+  const activeTableInputRef = React.useRef<{
+    blockId: string;
+    type: 'header' | 'cell';
+    rowIdx?: number;
+    colIdx: number;
+    element: HTMLInputElement;
+  } | null>(null);
 
   const handleTogglePublishCourse = async () => {
     if (!course) return;
@@ -452,9 +550,127 @@ export const AdminLessonEditorPage: React.FC = () => {
     } else if (type === 'video') {
       newBlock.videoUrl = '';
       newBlock.videoCaption = 'Video bài giảng';
+    } else if (type === 'table') {
+      newBlock.tableData = extra?.tableData || {
+        headers: ['', '', ''],
+        rows: [
+          ['', '', ''],
+          ['', '', '']
+        ],
+        alignments: ['center', 'center', 'center'],
+        isHeaderBold: false
+      };
     }
 
     setBlocks(prev => [...prev, newBlock]);
+  };
+
+  const updateTableHeader = (blockId: string, colIdx: number, value: string) => {
+    setBlocks(prev => prev.map(b => {
+      if (b.id !== blockId || !b.tableData) return b;
+      const newHeaders = [...b.tableData.headers];
+      newHeaders[colIdx] = value;
+      return { ...b, tableData: { ...b.tableData, headers: newHeaders } };
+    }));
+  };
+
+  const updateTableCell = (blockId: string, rowIdx: number, colIdx: number, value: string) => {
+    setBlocks(prev => prev.map(b => {
+      if (b.id !== blockId || !b.tableData) return b;
+      const newRows = b.tableData.rows.map((row, rI) => {
+        if (rI !== rowIdx) return row;
+        const newRow = [...row];
+        newRow[colIdx] = value;
+        return newRow;
+      });
+      return { ...b, tableData: { ...b.tableData, rows: newRows } };
+    }));
+  };
+
+  const handleApplyBoldToTableSelection = (blockId: string) => {
+    const active = activeTableInputRef.current;
+    if (!active || active.blockId !== blockId || !active.element) return;
+    const input = active.element;
+    const start = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+    const original = input.value || '';
+
+    let updated = '';
+    let newStart = start;
+    let newEnd = end;
+
+    if (start !== end) {
+      const selected = original.substring(start, end);
+      if (selected.startsWith('**') && selected.endsWith('**') && selected.length >= 4) {
+        const unwrapped = selected.slice(2, -2);
+        updated = original.substring(0, start) + unwrapped + original.substring(end);
+        newEnd = start + unwrapped.length;
+      } else {
+        const wrapped = `**${selected}**`;
+        updated = original.substring(0, start) + wrapped + original.substring(end);
+        newEnd = start + wrapped.length;
+      }
+    } else {
+      if (original.startsWith('**') && original.endsWith('**') && original.length >= 4) {
+        updated = original.slice(2, -2);
+        newStart = 0;
+        newEnd = updated.length;
+      } else if (original.trim()) {
+        updated = `**${original}**`;
+        newStart = 0;
+        newEnd = updated.length;
+      }
+    }
+
+    if (updated !== original) {
+      if (active.type === 'header') {
+        updateTableHeader(blockId, active.colIdx, updated);
+      } else if (active.type === 'cell' && typeof active.rowIdx === 'number') {
+        updateTableCell(blockId, active.rowIdx, active.colIdx, updated);
+      }
+      setTimeout(() => {
+        input.focus();
+        input.setSelectionRange(newStart, newEnd);
+      }, 0);
+    }
+  };
+
+  const addTableColumn = (blockId: string) => {
+    setBlocks(prev => prev.map(b => {
+      if (b.id !== blockId || !b.tableData) return b;
+      const newHeaders = [...b.tableData.headers, ''];
+      const newAligns = [...b.tableData.alignments, 'center' as const];
+      const newRows = b.tableData.rows.map(row => [...row, '']);
+      return { ...b, tableData: { ...b.tableData, headers: newHeaders, alignments: newAligns, rows: newRows } };
+    }));
+  };
+
+  const removeTableColumn = (blockId: string, colIdx?: number) => {
+    setBlocks(prev => prev.map(b => {
+      if (b.id !== blockId || !b.tableData || b.tableData.headers.length <= 1) return b;
+      const targetIdx = typeof colIdx === 'number' ? colIdx : b.tableData.headers.length - 1;
+      const newHeaders = b.tableData.headers.filter((_, idx) => idx !== targetIdx);
+      const newAligns = b.tableData.alignments.filter((_, idx) => idx !== targetIdx);
+      const newRows = b.tableData.rows.map(row => row.filter((_, idx) => idx !== targetIdx));
+      return { ...b, tableData: { ...b.tableData, headers: newHeaders, alignments: newAligns, rows: newRows } };
+    }));
+  };
+
+  const addTableRow = (blockId: string) => {
+    setBlocks(prev => prev.map(b => {
+      if (b.id !== blockId || !b.tableData) return b;
+      const emptyRow = Array(b.tableData.headers.length).fill('');
+      return { ...b, tableData: { ...b.tableData, rows: [...b.tableData.rows, emptyRow] } };
+    }));
+  };
+
+  const removeTableRow = (blockId: string, rowIdx?: number) => {
+    setBlocks(prev => prev.map(b => {
+      if (b.id !== blockId || !b.tableData || b.tableData.rows.length <= 1) return b;
+      const targetIdx = typeof rowIdx === 'number' ? rowIdx : b.tableData.rows.length - 1;
+      const newRows = b.tableData.rows.filter((_, idx) => idx !== targetIdx);
+      return { ...b, tableData: { ...b.tableData, rows: newRows } };
+    }));
   };
 
   const updateBlock = (id: string, updates: Partial<EditorBlock>) => {
@@ -691,8 +907,8 @@ export const AdminLessonEditorPage: React.FC = () => {
         
         {/* Top Info Card */}
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2 space-y-1.5">
+          <div>
+            <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-700">
                 Tên bài học <span className="text-rose-500">*</span>
               </label>
@@ -701,21 +917,6 @@ export const AdminLessonEditorPage: React.FC = () => {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Ví dụ: Tư duy quan hệ và INNER JOIN"
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                <span>Thời lượng học (phút)</span>
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={360}
-                value={durationMinutes}
-                onChange={(e) => setDurationMinutes(Number(e.target.value))}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition"
               />
             </div>
@@ -1170,6 +1371,174 @@ export const AdminLessonEditorPage: React.FC = () => {
                     </div>
                   )}
 
+                  {/* 7. TABLE BLOCK */}
+                  {block.type === 'table' && block.tableData && (
+                    <div className="space-y-3 pr-14">
+                      {/* Top Control Bar of Table */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                            <Table className="w-4 h-4 text-blue-600" />
+                            <span>Khối Bảng</span>
+                          </div>
+
+                          <div className="h-4 w-px bg-slate-200" />
+
+                          {/* Column count stepper */}
+                          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-700 shadow-2xs">
+                            <span className="text-[11px] text-slate-400">Cột:</span>
+                            <button
+                              type="button"
+                              disabled={block.tableData.headers.length <= 1}
+                              onClick={() => removeTableColumn(block.id)}
+                              className="w-4 h-4 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                              title="Giảm 1 cột"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="w-4 text-center font-bold text-blue-700">{block.tableData.headers.length}</span>
+                            <button
+                              type="button"
+                              disabled={block.tableData.headers.length >= 8}
+                              onClick={() => addTableColumn(block.id)}
+                              className="w-4 h-4 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                              title="Thêm 1 cột"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          {/* Row count stepper */}
+                          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-700 shadow-2xs">
+                            <span className="text-[11px] text-slate-400">Hàng:</span>
+                            <button
+                              type="button"
+                              disabled={block.tableData.rows.length <= 1}
+                              onClick={() => removeTableRow(block.id)}
+                              className="w-4 h-4 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                              title="Giảm 1 hàng"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="w-4 text-center font-bold text-blue-700">{block.tableData.rows.length}</span>
+                            <button
+                              type="button"
+                              disabled={block.tableData.rows.length >= 50}
+                              onClick={() => addTableRow(block.id)}
+                              className="w-4 h-4 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                              title="Thêm 1 hàng"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Formatting controls */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handleApplyBoldToTableSelection(block.id)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer bg-slate-900 text-white hover:bg-slate-800 shadow-2xs active:scale-95"
+                            title="Bôi đen văn bản trong ô rồi bấm nút này để in đậm"
+                          >
+                            <Bold className="w-3.5 h-3.5" />
+                            <span>In đậm</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Interactive Editable Table Grid */}
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-2xs">
+                        <table className="w-full border-collapse text-xs sm:text-sm">
+                          <thead>
+                            <tr className="bg-slate-100/90 border-b border-slate-200">
+                              <th className="w-10 px-2 py-2 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                #
+                              </th>
+                              {block.tableData.headers.map((head, colIdx) => (
+                                <th key={colIdx} className="p-2 border-l border-slate-200 min-w-[130px]">
+                                  <div className="relative flex items-center">
+                                    <input
+                                      type="text"
+                                      value={head}
+                                      onFocus={(e) => {
+                                        activeTableInputRef.current = {
+                                          blockId: block.id,
+                                          type: 'header',
+                                          colIdx,
+                                          element: e.currentTarget
+                                        };
+                                      }}
+                                      onChange={(e) => updateTableHeader(block.id, colIdx, e.target.value)}
+                                      placeholder={`Cột ${colIdx + 1}`}
+                                      className={`w-full bg-white border border-slate-200 focus:border-blue-500 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-blue-400 focus:outline-none transition text-center font-bold text-slate-800 text-xs sm:text-sm ${
+                                        block.tableData!.headers.length > 1 ? 'pr-7' : ''
+                                      }`}
+                                    />
+                                    {block.tableData!.headers.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeTableColumn(block.id, colIdx)}
+                                        className="absolute right-1 text-slate-300 hover:text-rose-600 p-0.5 rounded cursor-pointer transition"
+                                        title={`Xóa cột ${colIdx + 1}`}
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {block.tableData.rows.map((row, rowIdx) => (
+                              <tr key={rowIdx} className="hover:bg-slate-50/70 group/row transition-colors">
+                                <td className="px-2 py-2 text-center text-xs font-bold text-slate-400 bg-slate-50/50">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span>{rowIdx + 1}</span>
+                                    {block.tableData!.rows.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeTableRow(block.id, rowIdx)}
+                                        className="opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-rose-600 p-0.5 rounded cursor-pointer transition"
+                                        title={`Xóa hàng ${rowIdx + 1}`}
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                {row.map((cell, colIdx) => (
+                                  <td key={colIdx} className="p-1.5 border-l border-slate-100">
+                                    <input
+                                      type="text"
+                                      value={cell}
+                                      onFocus={(e) => {
+                                        activeTableInputRef.current = {
+                                          blockId: block.id,
+                                          type: 'cell',
+                                          rowIdx,
+                                          colIdx,
+                                          element: e.currentTarget
+                                        };
+                                      }}
+                                      onChange={(e) => updateTableCell(block.id, rowIdx, colIdx, e.target.value)}
+                                      placeholder="..."
+                                      className={`w-full bg-white border border-transparent hover:border-slate-200 focus:border-blue-400 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs sm:text-sm text-slate-800 transition text-left ${
+                                        cell.startsWith('**') && cell.endsWith('**') && cell.length >= 4 ? 'font-bold text-slate-900' : 'font-normal'
+                                      }`}
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               ))}
 
@@ -1201,29 +1570,20 @@ export const AdminLessonEditorPage: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => addBlock('callout', { calloutType: 'keypoint' })}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200/80 transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Khung Bản Lề</span>
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => addBlock('callout', { calloutType: 'tip' })}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white border border-emerald-200/80 transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Lightbulb className="w-3.5 h-3.5" />
-                    <span>Khung Mẹo Hay</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => addBlock('callout', { calloutType: 'warning' })}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white border border-amber-200/80 transition cursor-pointer flex items-center gap-1.5"
                   >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Khung Cảnh Báo</span>
+                    <StickyNote className="w-3.5 h-3.5" />
+                    <span>Khối Ghi Chú</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => addBlock('table')}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200/80 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                    <span>Khối Bảng</span>
                   </button>
 
                   <button
@@ -1295,18 +1655,14 @@ export const AdminLessonEditorPage: React.FC = () => {
               <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-tight">
                 {title || 'Tiêu đề bài học chưa đặt'}
               </h1>
-              <div className="flex items-center gap-3 text-xs text-slate-500">
-                <span className="flex items-center gap-1 bg-slate-100 text-slate-700 px-3 py-1 rounded-full font-semibold">
-                  <Clock className="w-3.5 h-3.5 text-orange-500" />
-                  <span>{durationMinutes || 15} phút học</span>
-                </span>
-                {blocks.some(b => b.type === 'video' && b.videoUrl?.trim()) && (
+              {blocks.some(b => b.type === 'video' && b.videoUrl?.trim()) && (
+                <div className="flex items-center gap-3 text-xs text-slate-500">
                   <span className="flex items-center gap-1 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-semibold border border-indigo-100">
                     <Video className="w-3.5 h-3.5" />
                     <span>Có video bài giảng</span>
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {currentPreviewContent ? (
