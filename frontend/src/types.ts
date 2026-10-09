@@ -210,6 +210,10 @@ export interface Course {
   chapters?: Chapter[];
   status?: 'draft' | 'published';
   createdAt: string;
+  hasSandbox?: boolean;
+  sandboxLanguage?: 'sql' | 'python' | 'javascript' | 'typescript' | 'html' | 'universal' | string;
+  sandboxTitle?: string;
+  sandboxInitialCode?: string;
 }
 
 export type VideoStatus = 'PROCESSING' | 'READY' | 'FAILED';

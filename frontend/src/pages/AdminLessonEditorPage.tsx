@@ -1,26 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  Save, 
-  Eye, 
-  Edit3, 
-  Layers, 
-  FileCode, 
-  Clock, 
-  Video, 
-  AlignLeft, 
-  Heading2, 
-  Sparkles, 
-  Lightbulb, 
-  AlertTriangle, 
-  Info, 
-  Code2, 
-  Image as ImageIcon, 
-  Trash2, 
-  ArrowUp, 
-  ArrowDown, 
-  Check, 
+import {
+  ArrowLeft,
+  Save,
+  Eye,
+  Edit3,
+  Layers,
+  FileCode,
+  Clock,
+  Video,
+  AlignLeft,
+  Heading2,
+  Sparkles,
+  Lightbulb,
+  AlertTriangle,
+  Info,
+  Code2,
+  Image as ImageIcon,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Check,
   ChevronRight,
   ExternalLink,
   RefreshCw,
@@ -34,6 +34,7 @@ import {
   Globe,
   EyeOff,
   FileEdit,
+  BookOpen,
   Table,
   StickyNote,
   AlignCenter,
@@ -45,6 +46,7 @@ import {
 import { AdminAPI, VideoAPI, ImageAPI } from '../services/api';
 import { Course, Chapter, Lesson, VideoItem } from '../types';
 import { HypertextRenderer } from '../components/HypertextRenderer';
+import { SyntaxCodeEditor } from '../components/common/SyntaxCodeEditor';
 
 export type BlockType = 'heading' | 'paragraph' | 'callout' | 'code' | 'image' | 'video' | 'table';
 
@@ -60,11 +62,12 @@ export interface EditorBlock {
   type: BlockType;
   headingText?: string;
   paragraphText?: string;
-  calloutType?: 'keypoint' | 'tip' | 'warning' | 'info';
+  calloutType?: 'keypoint' | 'tip' | 'warning' | 'info' | 'exercise';
   calloutTitle?: string;
   calloutContent?: string;
   codeLang?: string;
   codeText?: string;
+  solutionCode?: string;
   imageUrl?: string;
   imageCaption?: string;
   videoUrl?: string;
@@ -138,8 +141,9 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
       const header = line.trim().slice(3).trim();
       const spaceIdx = header.indexOf(' ');
       const rawType = (spaceIdx !== -1 ? header.slice(0, spaceIdx) : header).toLowerCase();
-      const validTypes: ('keypoint' | 'tip' | 'warning' | 'info')[] = ['keypoint', 'tip', 'warning', 'info'];
-      const calloutType = validTypes.includes(rawType as any) ? (rawType as any) : 'keypoint';
+      const validTypes: ('keypoint' | 'tip' | 'warning' | 'info' | 'exercise')[] = ['keypoint', 'tip', 'warning', 'info', 'exercise'];
+      const normalizedType = rawType === 'baitap' || rawType === 'task' ? 'exercise' : rawType;
+      const calloutType = validTypes.includes(normalizedType as any) ? (normalizedType as any) : 'keypoint';
       const calloutTitle = spaceIdx !== -1 ? header.slice(spaceIdx + 1).trim() : '';
 
       const contentLines: string[] = [];
@@ -174,11 +178,41 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
       if (i < lines.length && lines[i].trim().startsWith('```')) {
         i++;
       }
+      const rawFullCode = codeLines.join('\n');
+      const SOLUTION_REGEX = /\r?\n\s*(?:--|\/\/|#|\/\*|<!--)?\s*===solution===\s*(?:\*\/|-->)?\r?\n?/i;
+      let parsedCodeText = rawFullCode;
+      let parsedSolutionCode: string | undefined = undefined;
+
+      if (SOLUTION_REGEX.test(rawFullCode)) {
+        const parts = rawFullCode.split(SOLUTION_REGEX);
+        parsedCodeText = parts[0];
+        parsedSolutionCode = parts.slice(1).join('\n').trim();
+      } else {
+        // Check if followed by :::solution
+        let lookAhead = i;
+        while (lookAhead < lines.length && lines[lookAhead].trim().length === 0) {
+          lookAhead++;
+        }
+        if (lookAhead < lines.length && lines[lookAhead].trim().startsWith(':::solution')) {
+          i = lookAhead + 1;
+          const solLines: string[] = [];
+          while (i < lines.length && !lines[i].trim().startsWith(':::')) {
+            solLines.push(lines[i]);
+            i++;
+          }
+          if (i < lines.length && lines[i].trim().startsWith(':::')) {
+            i++;
+          }
+          parsedSolutionCode = solLines.join('\n').trim();
+        }
+      }
+
       blocks.push({
         id: `blk_${Date.now()}_${counter++}`,
         type: 'code',
         codeLang,
-        codeText: codeLines.join('\n')
+        codeText: parsedCodeText,
+        solutionCode: parsedSolutionCode
       });
       continue;
     }
@@ -297,7 +331,11 @@ const serializeBlocksToMarkdown = (blocks: EditorBlock[]): string => {
     } else if (block.type === 'code') {
       const lang = block.codeLang || 'sql';
       const code = block.codeText || '';
-      parts.push(`\`\`\`${lang}\n${code}\n\`\`\``);
+      if (block.solutionCode && block.solutionCode.trim()) {
+        parts.push(`\`\`\`${lang}\n${code}\n===solution===\n${block.solutionCode.trim()}\n\`\`\``);
+      } else {
+        parts.push(`\`\`\`${lang}\n${code}\n\`\`\``);
+      }
     } else if (block.type === 'image') {
       if (block.imageUrl) {
         parts.push(`![${block.imageCaption || ''}](${block.imageUrl})`);
@@ -447,7 +485,7 @@ export const AdminLessonEditorPage: React.FC = () => {
     const loadLessonData = async () => {
       setIsLoading(true);
       try {
-        VideoAPI.list().then(vids => setAvailableVideos(vids)).catch(() => {});
+        VideoAPI.list().then(vids => setAvailableVideos(vids)).catch(() => { });
         const courses = await AdminAPI.getCourses();
         const foundCourse = courses.find(c => c.id === courseId);
         if (!foundCourse) {
@@ -537,13 +575,18 @@ export const AdminLessonEditorPage: React.FC = () => {
       newBlock.calloutType = extra?.calloutType || 'keypoint';
       newBlock.calloutTitle = extra?.calloutTitle || (
         newBlock.calloutType === 'keypoint' ? 'Điểm then chốt của bài học:' :
-        newBlock.calloutType === 'tip' ? 'Mẹo hay / Lưu ý:' :
-        newBlock.calloutType === 'warning' ? 'Cảnh báo quan trọng:' : 'Thông tin bổ sung:'
+          newBlock.calloutType === 'tip' ? 'Mẹo hay / Lưu ý:' :
+            newBlock.calloutType === 'warning' ? 'Cảnh báo quan trọng:' :
+              newBlock.calloutType === 'exercise' ? 'Bài tập:' : 'Thông tin bổ sung:'
       );
-      newBlock.calloutContent = 'Nhập nội dung cần đóng khung nổi bật ở đây...';
+      newBlock.calloutContent = extra?.calloutContent || (
+        newBlock.calloutType === 'exercise'
+          ? 'Nhập yêu cầu hoặc câu hỏi bài tập tại đây...'
+          : 'Nhập nội dung cần đóng khung nổi bật ở đây...'
+      );
     } else if (type === 'code') {
       newBlock.codeLang = extra?.codeLang || 'sql';
-      newBlock.codeText = '-- Viết câu lệnh truy vấn mẫu ở đây\nSELECT * FROM sinh_vien;';
+      newBlock.codeText = '';
     } else if (type === 'image') {
       newBlock.imageUrl = 'https://images.unsplash.com/photo-1544383835-bda2bc66a55d?w=800&auto=format&fit=crop';
       newBlock.imageCaption = 'Sơ đồ minh họa';
@@ -677,6 +720,31 @@ export const AdminLessonEditorPage: React.FC = () => {
     setBlocks(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
   };
 
+  const handleSelectCalloutType = (block: EditorBlock, newType: 'keypoint' | 'tip' | 'warning' | 'info' | 'exercise') => {
+    const defaultTitles = [
+      'Điểm then chốt của bài học:',
+      'Điểm then chốt:',
+      'Mẹo hay / Lưu ý:',
+      'Mẹo hay / Lưu ý',
+      'Cảnh báo quan trọng:',
+      'Thông tin bổ sung:',
+      'Bài tập:',
+      'Bài tập thực hành:'
+    ];
+    const isDefault = !block.calloutTitle || defaultTitles.includes(block.calloutTitle.trim());
+    const newTitle = isDefault ? (
+      newType === 'keypoint' ? 'Điểm then chốt của bài học:' :
+        newType === 'tip' ? 'Mẹo hay / Lưu ý:' :
+          newType === 'warning' ? 'Cảnh báo quan trọng:' :
+            newType === 'exercise' ? 'Bài tập:' : 'Thông tin bổ sung:'
+    ) : block.calloutTitle;
+
+    updateBlock(block.id, {
+      calloutType: newType,
+      calloutTitle: newTitle
+    });
+  };
+
   const removeBlock = (id: string) => {
     if (blocks.length <= 1) {
       setBlocks([{ id: `blk_${Date.now()}`, type: 'paragraph', paragraphText: '' }]);
@@ -768,11 +836,11 @@ export const AdminLessonEditorPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-900 flex flex-col w-full">
-      
+
       {/* Top Sticky Header */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-2xs px-4 sm:px-8 py-3.5">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-          
+
           {/* Back & Breadcrumb */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -813,11 +881,10 @@ export const AdminLessonEditorPage: React.FC = () => {
             <button
               type="button"
               onClick={() => handleSwitchTab('VISUAL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTab === 'VISUAL'
-                  ? 'bg-white text-orange-600 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${activeTab === 'VISUAL'
+                ? 'bg-white text-orange-600 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+                }`}
               title="Soạn thảo trực quan kiểu Word"
             >
               <Layers className="w-3.5 h-3.5" />
@@ -828,11 +895,10 @@ export const AdminLessonEditorPage: React.FC = () => {
             <button
               type="button"
               onClick={() => handleSwitchTab('PREVIEW')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTab === 'PREVIEW'
-                  ? 'bg-white text-orange-600 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${activeTab === 'PREVIEW'
+                ? 'bg-white text-orange-600 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+                }`}
               title="Xem trước giao diện học viên"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -842,11 +908,10 @@ export const AdminLessonEditorPage: React.FC = () => {
             <button
               type="button"
               onClick={() => handleSwitchTab('RAW')}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
-                activeTab === 'RAW'
-                  ? 'bg-white text-orange-600 shadow-2xs'
-                  : 'text-slate-400 hover:text-slate-700'
-              }`}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${activeTab === 'RAW'
+                ? 'bg-white text-orange-600 shadow-2xs'
+                : 'text-slate-400 hover:text-slate-700'
+                }`}
               title="Chế độ mã Markdown thô"
             >
               <FileCode className="w-3.5 h-3.5" />
@@ -860,11 +925,10 @@ export const AdminLessonEditorPage: React.FC = () => {
                 type="button"
                 onClick={handleTogglePublishCourse}
                 disabled={isPublishingCourse}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 ${
-                  course.status === 'draft'
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                }`}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 ${course.status === 'draft'
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                  }`}
                 title={course.status === 'draft' ? 'Xuất bản khóa học để học viên nhìn thấy' : 'Chuyển về bản nháp để ẩn khỏi học viên'}
               >
                 {isPublishingCourse ? (
@@ -904,7 +968,7 @@ export const AdminLessonEditorPage: React.FC = () => {
 
       {/* Main Page Canvas */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
-        
+
         {/* Top Info Card */}
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
           <div>
@@ -1008,73 +1072,81 @@ export const AdminLessonEditorPage: React.FC = () => {
                         <div className="flex items-center gap-1 text-xs">
                           <button
                             type="button"
-                            onClick={() => updateBlock(block.id, { calloutType: 'keypoint' })}
-                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                              block.calloutType === 'keypoint'
-                                ? 'bg-indigo-600 text-white shadow-2xs'
-                                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                            }`}
+                            onClick={() => handleSelectCalloutType(block, 'keypoint')}
+                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${block.calloutType === 'keypoint'
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                              }`}
                           >
                             Bản lề (Tím)
                           </button>
                           <button
                             type="button"
-                            onClick={() => updateBlock(block.id, { calloutType: 'tip' })}
-                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                              block.calloutType === 'tip'
-                                ? 'bg-emerald-600 text-white shadow-2xs'
-                                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                            }`}
+                            onClick={() => handleSelectCalloutType(block, 'tip')}
+                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${block.calloutType === 'tip'
+                              ? 'bg-emerald-600 text-white shadow-2xs'
+                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              }`}
                           >
                             Mẹo hay (Xanh lá)
                           </button>
                           <button
                             type="button"
-                            onClick={() => updateBlock(block.id, { calloutType: 'warning' })}
-                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                              block.calloutType === 'warning'
-                                ? 'bg-amber-600 text-white shadow-2xs'
-                                : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-                            }`}
+                            onClick={() => handleSelectCalloutType(block, 'warning')}
+                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${block.calloutType === 'warning'
+                              ? 'bg-amber-600 text-white shadow-2xs'
+                              : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                              }`}
                           >
                             Cảnh báo (Vàng)
                           </button>
                           <button
                             type="button"
-                            onClick={() => updateBlock(block.id, { calloutType: 'info' })}
-                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                              block.calloutType === 'info'
-                                ? 'bg-sky-600 text-white shadow-2xs'
-                                : 'bg-sky-50 text-sky-800 hover:bg-sky-100'
-                            }`}
+                            onClick={() => handleSelectCalloutType(block, 'info')}
+                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${block.calloutType === 'info'
+                              ? 'bg-sky-600 text-white shadow-2xs'
+                              : 'bg-sky-50 text-sky-800 hover:bg-sky-100'
+                              }`}
                           >
                             Lưu ý (Xanh dương)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectCalloutType(block, 'exercise')}
+                            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold transition cursor-pointer ${block.calloutType === 'exercise'
+                              ? 'bg-orange-600 text-white shadow-2xs'
+                              : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+                              }`}
+                          >
+                            Bài tập (Cam)
                           </button>
                         </div>
                       </div>
 
                       {/* The Visual Box */}
                       <div
-                        className={`rounded-2xl border p-5 shadow-xs relative overflow-hidden space-y-2.5 transition-colors ${
-                          block.calloutType === 'tip'
-                            ? 'border-emerald-300 bg-emerald-50/50'
-                            : block.calloutType === 'warning'
+                        className={`rounded-2xl border p-5 shadow-xs relative overflow-hidden space-y-2.5 transition-colors ${block.calloutType === 'tip'
+                          ? 'border-emerald-300 bg-emerald-50/50'
+                          : block.calloutType === 'warning'
                             ? 'border-amber-300 bg-amber-50/50'
                             : block.calloutType === 'info'
-                            ? 'border-sky-300 bg-sky-50/50'
-                            : 'border-indigo-400 bg-indigo-50/50'
-                        }`}
+                              ? 'border-sky-300 bg-sky-50/50'
+                              : block.calloutType === 'exercise'
+                                ? 'border-orange-300 bg-orange-50/50'
+                                : 'border-indigo-400 bg-indigo-50/50'
+                          }`}
                       >
                         <div
-                          className={`absolute left-0 top-0 bottom-0 w-1.5 ${
-                            block.calloutType === 'tip'
-                              ? 'bg-emerald-500'
-                              : block.calloutType === 'warning'
+                          className={`absolute left-0 top-0 bottom-0 w-1.5 ${block.calloutType === 'tip'
+                            ? 'bg-emerald-500'
+                            : block.calloutType === 'warning'
                               ? 'bg-amber-500'
                               : block.calloutType === 'info'
-                              ? 'bg-sky-500'
-                              : 'bg-indigo-600'
-                          }`}
+                                ? 'bg-sky-500'
+                                : block.calloutType === 'exercise'
+                                  ? 'bg-orange-500'
+                                  : 'bg-indigo-600'
+                            }`}
                         />
 
                         <div className="flex items-start gap-3">
@@ -1084,6 +1156,8 @@ export const AdminLessonEditorPage: React.FC = () => {
                             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-1" />
                           ) : block.calloutType === 'info' ? (
                             <Info className="w-5 h-5 text-sky-600 shrink-0 mt-1" />
+                          ) : block.calloutType === 'exercise' ? (
+                            <BookOpen className="w-5 h-5 text-orange-600 shrink-0 mt-1" />
                           ) : (
                             <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-1" />
                           )}
@@ -1093,14 +1167,22 @@ export const AdminLessonEditorPage: React.FC = () => {
                               type="text"
                               value={block.calloutTitle || ''}
                               onChange={(e) => updateBlock(block.id, { calloutTitle: e.target.value })}
-                              placeholder="Tiêu đề khung ghi chú (ví dụ: Đây là bài bản lề của cả khóa:)..."
+                              placeholder={
+                                block.calloutType === 'exercise'
+                                  ? 'Tiêu đề bài tập (ví dụ: Bài tập thực hành 1:)...'
+                                  : 'Tiêu đề khung ghi chú (ví dụ: Đây là bài bản lề của cả khóa:)...'
+                              }
                               className="w-full font-bold text-sm text-slate-900 bg-transparent border-0 border-b border-slate-300/60 pb-1 focus:outline-none focus:border-indigo-500 transition"
                             />
                             <textarea
                               rows={3}
                               value={block.calloutContent || ''}
                               onChange={(e) => updateBlock(block.id, { calloutContent: e.target.value })}
-                              placeholder="Nhập nội dung cần đóng khung nổi bật..."
+                              placeholder={
+                                block.calloutType === 'exercise'
+                                  ? 'Nhập yêu cầu hoặc câu hỏi bài tập cần học viên làm tại đây...'
+                                  : 'Nhập nội dung cần đóng khung nổi bật...'
+                              }
                               className="w-full text-xs sm:text-sm text-slate-800 leading-relaxed bg-transparent border-0 focus:outline-none resize-y"
                             />
                           </div>
@@ -1111,7 +1193,7 @@ export const AdminLessonEditorPage: React.FC = () => {
 
                   {/* 4. CODE BLOCK */}
                   {block.type === 'code' && (
-                    <div className="space-y-2 pr-14">
+                    <div className="space-y-3 pr-14">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           <Code2 className="w-3.5 h-3.5 text-orange-500" />
@@ -1133,15 +1215,59 @@ export const AdminLessonEditorPage: React.FC = () => {
                         </select>
                       </div>
 
-                      <div className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-xs">
-                        <textarea
-                          rows={5}
-                          value={block.codeText || ''}
-                          onChange={(e) => updateBlock(block.id, { codeText: e.target.value })}
-                          placeholder="Nhập code ở đây..."
-                          className="w-full p-4 bg-transparent text-xs sm:text-sm font-mono text-emerald-300 focus:outline-none resize-y leading-relaxed"
-                        />
+                      {/* Code khởi tạo / Đề bài */}
+                      <div className="space-y-1">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/60 overflow-hidden shadow-2xs focus-within:bg-white focus-within:border-orange-400 focus-within:ring-2 focus-within:ring-orange-500/10 transition-all">
+                          <SyntaxCodeEditor
+                            value={block.codeText || ''}
+                            onChange={(val) => updateBlock(block.id, { codeText: val })}
+                            language={block.codeLang || 'sql'}
+                            placeholder="Nhập code bài tập hoặc mã khởi tạo ở đây..."
+                            rows={6}
+                          />
+                        </div>
                       </div>
+
+                      {/* Đáp án mẫu (Xem đáp án) */}
+                      {block.solutionCode === undefined ? (
+                        <div className="pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => updateBlock(block.id, { solutionCode: '' })}
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 px-3 py-1.5 rounded-xl transition cursor-pointer shadow-2xs active:scale-95"
+                          >
+                            <Lightbulb className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                            <span>Thêm đáp án</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-emerald-300 bg-emerald-50/40 p-3.5 space-y-2.5 shadow-2xs animate-in fade-in duration-150">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                              <Lightbulb className="w-4 h-4 text-amber-500 fill-amber-500" />
+                              <span>Đáp án</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateBlock(block.id, { solutionCode: undefined })}
+                              className="text-[11px] text-slate-400 hover:text-rose-600 font-bold transition cursor-pointer"
+                              title="Xóa đáp án mẫu"
+                            >
+                              Xóa đáp án
+                            </button>
+                          </div>
+
+                          <div className="rounded-xl border border-emerald-200 bg-white overflow-hidden shadow-2xs focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10">
+                            <SyntaxCodeEditor
+                              value={block.solutionCode || ''}
+                              onChange={(val) => updateBlock(block.id, { solutionCode: val })}
+                              language={block.codeLang || 'sql'}
+                              placeholder="Nhập code đáp án mẫu chính xác ở đây..."
+                              rows={5}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1199,9 +1325,8 @@ export const AdminLessonEditorPage: React.FC = () => {
 
                       {/* Upload feedback */}
                       {imageUploadMsg[block.id] && (
-                        <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
-                          imageUploadMsg[block.id].type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
-                        }`}>
+                        <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${imageUploadMsg[block.id].type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+                          }`}>
                           {imageUploadMsg[block.id].type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
                           <span>{imageUploadMsg[block.id].text}</span>
                         </div>
@@ -1330,9 +1455,8 @@ export const AdminLessonEditorPage: React.FC = () => {
                           />
 
                           {blockUploadMsg[block.id] && (
-                            <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
-                              blockUploadMsg[block.id].type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
-                            }`}>
+                            <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${blockUploadMsg[block.id].type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+                              }`}>
                               {blockUploadMsg[block.id].type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
                               <span>{blockUploadMsg[block.id].text}</span>
                             </div>
@@ -1472,9 +1596,8 @@ export const AdminLessonEditorPage: React.FC = () => {
                                       }}
                                       onChange={(e) => updateTableHeader(block.id, colIdx, e.target.value)}
                                       placeholder={`Cột ${colIdx + 1}`}
-                                      className={`w-full bg-white border border-slate-200 focus:border-blue-500 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-blue-400 focus:outline-none transition text-center font-bold text-slate-800 text-xs sm:text-sm ${
-                                        block.tableData!.headers.length > 1 ? 'pr-7' : ''
-                                      }`}
+                                      className={`w-full bg-white border border-slate-200 focus:border-blue-500 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-blue-400 focus:outline-none transition text-center font-bold text-slate-800 text-xs sm:text-sm ${block.tableData!.headers.length > 1 ? 'pr-7' : ''
+                                        }`}
                                     />
                                     {block.tableData!.headers.length > 1 && (
                                       <button
@@ -1525,9 +1648,8 @@ export const AdminLessonEditorPage: React.FC = () => {
                                       }}
                                       onChange={(e) => updateTableCell(block.id, rowIdx, colIdx, e.target.value)}
                                       placeholder="..."
-                                      className={`w-full bg-white border border-transparent hover:border-slate-200 focus:border-blue-400 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs sm:text-sm text-slate-800 transition text-left ${
-                                        cell.startsWith('**') && cell.endsWith('**') && cell.length >= 4 ? 'font-bold text-slate-900' : 'font-normal'
-                                      }`}
+                                      className={`w-full bg-white border border-transparent hover:border-slate-200 focus:border-blue-400 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs sm:text-sm text-slate-800 transition text-left ${cell.startsWith('**') && cell.endsWith('**') && cell.length >= 4 ? 'font-bold text-slate-900' : 'font-normal'
+                                        }`}
                                     />
                                   </td>
                                 ))}
@@ -1642,7 +1764,7 @@ export const AdminLessonEditorPage: React.FC = () => {
         {/* TAB 3: LIVE PREVIEW (GIAO DIỆN HỌC VIÊN CHUẨN SÁNG) */}
         {activeTab === 'PREVIEW' && (
           <div className="bg-white rounded-3xl border border-slate-200/90 p-8 sm:p-12 shadow-sm space-y-6">
-            
+
             <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium flex-wrap">
               <span>Trang chủ</span>
               <ChevronRight className="w-3 h-3 text-slate-300" />

@@ -898,7 +898,23 @@ apiRouter.get('/courses', (req, res) => {
 });
 
 apiRouter.post('/admin/courses', (req, res) => {
-  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds, chapters, status } = req.body;
+  const {
+    code,
+    name,
+    description,
+    department,
+    topic,
+    isFreeTier,
+    tierRequired,
+    documentIds,
+    videoIds,
+    chapters,
+    status,
+    hasSandbox,
+    sandboxLanguage,
+    sandboxTitle,
+    sandboxInitialCode
+  } = req.body;
   if (!code || !name) {
     return errorResponse(res, 'E-CRS-001', 'Mã môn học và tên môn học là bắt buộc.', 400);
   }
@@ -922,6 +938,10 @@ apiRouter.post('/admin/courses', (req, res) => {
     videoIds: vIds,
     chapters: courseChapters,
     status: courseStatus,
+    hasSandbox: hasSandbox !== undefined ? Boolean(hasSandbox) : undefined,
+    sandboxLanguage: sandboxLanguage ? String(sandboxLanguage).trim() : undefined,
+    sandboxTitle: sandboxTitle ? String(sandboxTitle).trim() : undefined,
+    sandboxInitialCode: sandboxInitialCode !== undefined ? String(sandboxInitialCode) : undefined,
     createdAt: new Date().toISOString()
   });
   return successResponse(res, newCourse, 201);
@@ -929,7 +949,23 @@ apiRouter.post('/admin/courses', (req, res) => {
 
 apiRouter.put('/admin/courses/:id', (req, res) => {
   const { id } = req.params;
-  const { code, name, description, department, topic, isFreeTier, tierRequired, documentIds, videoIds, chapters, status } = req.body;
+  const {
+    code,
+    name,
+    description,
+    department,
+    topic,
+    isFreeTier,
+    tierRequired,
+    documentIds,
+    videoIds,
+    chapters,
+    status,
+    hasSandbox,
+    sandboxLanguage,
+    sandboxTitle,
+    sandboxInitialCode
+  } = req.body;
 
   const existing = db.getCourse(id);
   if (!existing) {
@@ -958,6 +994,18 @@ apiRouter.put('/admin/courses/:id', (req, res) => {
   }
   if (status !== undefined) {
     updates.status = status === 'published' ? 'published' : 'draft';
+  }
+  if (hasSandbox !== undefined) {
+    updates.hasSandbox = Boolean(hasSandbox);
+  }
+  if (sandboxLanguage !== undefined) {
+    updates.sandboxLanguage = String(sandboxLanguage).trim();
+  }
+  if (sandboxTitle !== undefined) {
+    updates.sandboxTitle = String(sandboxTitle).trim();
+  }
+  if (sandboxInitialCode !== undefined) {
+    updates.sandboxInitialCode = String(sandboxInitialCode);
   }
 
   const updated = db.updateCourse(id, updates);

@@ -21,10 +21,12 @@ import {
   Plus, 
   Layers, 
   FileCode,
+  BookOpen,
   Check
 } from 'lucide-react';
 import { Lesson } from '../types';
 import { HypertextRenderer } from './HypertextRenderer';
+import { SyntaxCodeEditor } from './common/SyntaxCodeEditor';
 
 export type BlockType = 'heading' | 'paragraph' | 'callout' | 'code' | 'image' | 'video';
 
@@ -33,7 +35,7 @@ export interface EditorBlock {
   type: BlockType;
   headingText?: string;
   paragraphText?: string;
-  calloutType?: 'keypoint' | 'tip' | 'warning' | 'info';
+  calloutType?: 'keypoint' | 'tip' | 'warning' | 'info' | 'exercise';
   calloutTitle?: string;
   calloutContent?: string;
   codeLang?: string;
@@ -90,8 +92,9 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
       const header = line.trim().slice(3).trim();
       const spaceIdx = header.indexOf(' ');
       const rawType = (spaceIdx !== -1 ? header.slice(0, spaceIdx) : header).toLowerCase();
-      const validTypes: ('keypoint' | 'tip' | 'warning' | 'info')[] = ['keypoint', 'tip', 'warning', 'info'];
-      const calloutType = validTypes.includes(rawType as any) ? (rawType as any) : 'keypoint';
+      const validTypes: ('keypoint' | 'tip' | 'warning' | 'info' | 'exercise')[] = ['keypoint', 'tip', 'warning', 'info', 'exercise'];
+      const normalizedType = rawType === 'baitap' || rawType === 'task' ? 'exercise' : rawType;
+      const calloutType = validTypes.includes(normalizedType as any) ? (normalizedType as any) : 'keypoint';
       const calloutTitle = spaceIdx !== -1 ? header.slice(spaceIdx + 1).trim() : '';
 
       const contentLines: string[] = [];
@@ -281,12 +284,17 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
       newBlock.calloutTitle = extra?.calloutTitle || (
         newBlock.calloutType === 'keypoint' ? 'Điểm then chốt của bài học:' :
         newBlock.calloutType === 'tip' ? 'Mẹo hay / Lưu ý:' :
-        newBlock.calloutType === 'warning' ? 'Cảnh báo quan trọng:' : 'Thông tin bổ sung:'
+        newBlock.calloutType === 'warning' ? 'Cảnh báo quan trọng:' :
+        newBlock.calloutType === 'exercise' ? 'Bài tập:' : 'Thông tin bổ sung:'
       );
-      newBlock.calloutContent = 'Nhập nội dung cần đóng khung nổi bật ở đây...';
+      newBlock.calloutContent = extra?.calloutContent || (
+        newBlock.calloutType === 'exercise'
+          ? 'Nhập yêu cầu hoặc câu hỏi bài tập tại đây...'
+          : 'Nhập nội dung cần đóng khung nổi bật ở đây...'
+      );
     } else if (type === 'code') {
       newBlock.codeLang = extra?.codeLang || 'sql';
-      newBlock.codeText = '-- Viết câu lệnh truy vấn mẫu ở đây\nSELECT * FROM sinh_vien;';
+      newBlock.codeText = '';
     } else if (type === 'image') {
       newBlock.imageUrl = 'https://images.unsplash.com/photo-1544383835-bda2bc66a55d?w=800&auto=format&fit=crop';
       newBlock.imageCaption = 'Sơ đồ minh họa';
@@ -300,6 +308,31 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
 
   const updateBlock = (id: string, updates: Partial<EditorBlock>) => {
     setBlocks(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+  };
+
+  const handleSelectCalloutType = (block: EditorBlock, newType: 'keypoint' | 'tip' | 'warning' | 'info' | 'exercise') => {
+    const defaultTitles = [
+      'Điểm then chốt của bài học:',
+      'Điểm then chốt:',
+      'Mẹo hay / Lưu ý:',
+      'Mẹo hay / Lưu ý',
+      'Cảnh báo quan trọng:',
+      'Thông tin bổ sung:',
+      'Bài tập:',
+      'Bài tập thực hành:'
+    ];
+    const isDefault = !block.calloutTitle || defaultTitles.includes(block.calloutTitle.trim());
+    const newTitle = isDefault ? (
+      newType === 'keypoint' ? 'Điểm then chốt của bài học:' :
+      newType === 'tip' ? 'Mẹo hay / Lưu ý:' :
+      newType === 'warning' ? 'Cảnh báo quan trọng:' :
+      newType === 'exercise' ? 'Bài tập:' : 'Thông tin bổ sung:'
+    ) : block.calloutTitle;
+
+    updateBlock(block.id, { 
+      calloutType: newType,
+      calloutTitle: newTitle
+    });
   };
 
   const removeBlock = (id: string) => {
@@ -657,7 +690,7 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                           <div className="flex items-center gap-1 text-xs">
                             <button
                               type="button"
-                              onClick={() => updateBlock(block.id, { calloutType: 'keypoint' })}
+                              onClick={() => handleSelectCalloutType(block, 'keypoint')}
                               className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
                                 block.calloutType === 'keypoint'
                                   ? 'bg-indigo-600 text-white shadow-2xs'
@@ -668,7 +701,7 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => updateBlock(block.id, { calloutType: 'tip' })}
+                              onClick={() => handleSelectCalloutType(block, 'tip')}
                               className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
                                 block.calloutType === 'tip'
                                   ? 'bg-emerald-600 text-white shadow-2xs'
@@ -679,7 +712,7 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => updateBlock(block.id, { calloutType: 'warning' })}
+                              onClick={() => handleSelectCalloutType(block, 'warning')}
                               className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
                                 block.calloutType === 'warning'
                                   ? 'bg-amber-600 text-white shadow-2xs'
@@ -690,7 +723,7 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => updateBlock(block.id, { calloutType: 'info' })}
+                              onClick={() => handleSelectCalloutType(block, 'info')}
                               className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
                                 block.calloutType === 'info'
                                   ? 'bg-sky-600 text-white shadow-2xs'
@@ -698,6 +731,17 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                               }`}
                             >
                               Lưu ý (Xanh dương)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectCalloutType(block, 'exercise')}
+                              className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                                block.calloutType === 'exercise'
+                                  ? 'bg-orange-600 text-white shadow-2xs'
+                                  : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+                              }`}
+                            >
+                              Bài tập (Cam)
                             </button>
                           </div>
                         </div>
@@ -711,6 +755,8 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                               ? 'border-amber-300 bg-amber-50/50'
                               : block.calloutType === 'info'
                               ? 'border-sky-300 bg-sky-50/50'
+                              : block.calloutType === 'exercise'
+                              ? 'border-orange-300 bg-orange-50/50'
                               : 'border-indigo-400 bg-indigo-50/50'
                           }`}
                         >
@@ -723,6 +769,8 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                                 ? 'bg-amber-500'
                                 : block.calloutType === 'info'
                                 ? 'bg-sky-500'
+                                : block.calloutType === 'exercise'
+                                ? 'bg-orange-500'
                                 : 'bg-indigo-600'
                             }`}
                           />
@@ -734,6 +782,8 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-1" />
                             ) : block.calloutType === 'info' ? (
                               <Info className="w-5 h-5 text-sky-600 shrink-0 mt-1" />
+                            ) : block.calloutType === 'exercise' ? (
+                              <BookOpen className="w-5 h-5 text-orange-600 shrink-0 mt-1" />
                             ) : (
                               <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-1" />
                             )}
@@ -744,7 +794,11 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                                 type="text"
                                 value={block.calloutTitle || ''}
                                 onChange={(e) => updateBlock(block.id, { calloutTitle: e.target.value })}
-                                placeholder="Tiêu đề khung (ví dụ: Đây là bài bản lề của cả khóa:)..."
+                                placeholder={
+                                  block.calloutType === 'exercise'
+                                    ? 'Tiêu đề bài tập (ví dụ: Bài tập thực hành 1:)...'
+                                    : 'Tiêu đề khung (ví dụ: Đây là bài bản lề của cả khóa:)...'
+                                }
                                 className="w-full font-bold text-sm text-slate-900 bg-transparent border-0 border-b border-slate-300/60 pb-1 focus:outline-none focus:border-indigo-500 transition"
                               />
 
@@ -753,7 +807,11 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                                 rows={3}
                                 value={block.calloutContent || ''}
                                 onChange={(e) => updateBlock(block.id, { calloutContent: e.target.value })}
-                                placeholder="Nhập nội dung cần đóng khung ghi nhớ..."
+                                placeholder={
+                                  block.calloutType === 'exercise'
+                                    ? 'Nhập yêu cầu hoặc câu hỏi bài tập cần học viên làm tại đây...'
+                                    : 'Nhập nội dung cần đóng khung ghi nhớ...'
+                                }
                                 className="w-full text-xs sm:text-sm text-slate-800 leading-relaxed bg-transparent border-0 focus:outline-none resize-y"
                               />
                             </div>
@@ -786,13 +844,13 @@ export const LessonEditorModal: React.FC<LessonEditorModalProps> = ({
                           </select>
                         </div>
 
-                        <div className="rounded-xl border border-slate-800 bg-slate-950 overflow-hidden shadow-xs">
-                          <textarea
-                            rows={4}
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/60 overflow-hidden shadow-2xs focus-within:bg-white focus-within:border-orange-400 focus-within:ring-2 focus-within:ring-orange-500/10 transition-all">
+                          <SyntaxCodeEditor
                             value={block.codeText || ''}
-                            onChange={(e) => updateBlock(block.id, { codeText: e.target.value })}
+                            onChange={(val) => updateBlock(block.id, { codeText: val })}
+                            language={block.codeLang || 'sql'}
                             placeholder="Nhập đoạn mã code ở đây..."
-                            className="w-full p-3 bg-transparent text-xs font-mono text-emerald-300 focus:outline-none resize-y leading-relaxed"
+                            rows={5}
                           />
                         </div>
                       </div>

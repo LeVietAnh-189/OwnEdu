@@ -281,6 +281,10 @@ export const AdminAPI = {
     videoIds?: string[];
     chapters?: Chapter[];
     status?: 'draft' | 'published';
+    hasSandbox?: boolean;
+    sandboxLanguage?: string;
+    sandboxTitle?: string;
+    sandboxInitialCode?: string;
   }) => {
     const res = await api.post<{ success: boolean; data: Course }>('/admin/courses', payload);
     return res.data.data;

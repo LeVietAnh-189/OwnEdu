@@ -45,6 +45,10 @@ export interface Course {
   chapters?: Chapter[];
   status?: 'draft' | 'published';
   createdAt: string;
+  hasSandbox?: boolean;
+  sandboxLanguage?: string;
+  sandboxTitle?: string;
+  sandboxInitialCode?: string;
 }
 
 export type VideoStatus = 'PROCESSING' | 'READY' | 'FAILED';

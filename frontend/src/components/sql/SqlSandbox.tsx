@@ -14,6 +14,7 @@ import {
   ArrowUpRight,
   Clock,
 } from 'lucide-react';
+import { SyntaxCodeEditor } from '../common/SyntaxCodeEditor';
 
 // --- SEED DATABASE DATA ---
 export const DEFAULT_SQL_SEED = `
@@ -419,15 +420,15 @@ export const SqlSandbox: React.FC<SqlSandboxProps> = ({
         </div>
 
         {/* Text Editor Area */}
-        <div className="relative border-b border-slate-200 bg-slate-50/40 font-mono">
-          <textarea
-            ref={textareaRef}
+        <div className="relative border-b border-slate-200 bg-slate-50/40 font-mono focus-within:bg-white focus-within:ring-1 focus-within:ring-indigo-300 transition-colors">
+          <SyntaxCodeEditor
+            textareaRef={textareaRef}
             value={sqlCode}
-            onChange={(e) => handleSqlChange(e.target.value)}
+            onChange={handleSqlChange}
             onKeyDown={handleKeyDown}
-            spellCheck={false}
+            language="sql"
+            placeholder="-- Nhập câu lệnh SQL ở đây (Ctrl + Enter để chạy)..."
             rows={7}
-            className="w-full p-4 bg-transparent text-slate-800 text-xs sm:text-sm font-mono leading-relaxed outline-none resize-y placeholder:text-slate-400 focus:bg-white focus:ring-1 focus:ring-indigo-300 transition-colors"
           />
         </div>
 

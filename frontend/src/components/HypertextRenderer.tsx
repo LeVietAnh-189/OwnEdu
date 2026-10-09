@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Sparkles, 
   Lightbulb, 
   AlertTriangle, 
   Info, 
-  Copy, 
-  Check, 
+  BookOpen,
   ExternalLink 
 } from 'lucide-react';
+import { InteractiveCodeBlock } from './common/InteractiveCodeBlock';
 
 const extractYoutubeId = (url: string): string | null => {
   if (!url) return null;
@@ -22,13 +22,6 @@ interface HypertextRendererProps {
 }
 
 export const HypertextRenderer: React.FC<HypertextRendererProps> = ({ content, className = '' }) => {
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-
-  const handleCopyCode = (codeText: string, index: number) => {
-    navigator.clipboard.writeText(codeText);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
-  };
 
   // Helper to parse inline styles: **bold**, *italic*, `code`, [link](url)
   const renderInline = (text: string): React.ReactNode[] => {
@@ -204,6 +197,11 @@ export const HypertextRenderer: React.FC<HypertextRendererProps> = ({ content, c
           barClass = 'bg-sky-500';
           iconElem = <Info className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />;
           defaultTitle = 'Thông Tin Bổ Sung:';
+        } else if (type === 'exercise' || type === 'baitap' || type === 'task') {
+          borderClass = 'border-orange-300 bg-orange-50/50 text-orange-950';
+          barClass = 'bg-orange-500';
+          iconElem = <BookOpen className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />;
+          defaultTitle = 'Bài tập:';
         }
 
         const displayTitle = customTitle || defaultTitle;
@@ -251,40 +249,42 @@ export const HypertextRenderer: React.FC<HypertextRendererProps> = ({ content, c
         const fullCode = codeLines.join('\n');
         const currentCodeIdx = blockId++;
 
+        // Check if code contains ===solution=== or is immediately followed by :::solution
+        const SOLUTION_REGEX = /\r?\n\s*(?:--|\/\/|#|\/\*|<!--)?\s*===solution===\s*(?:\*\/|-->)?\r?\n?/i;
+        let starterCode = fullCode;
+        let solutionCode: string | undefined = undefined;
+
+        if (SOLUTION_REGEX.test(fullCode)) {
+          const parts = fullCode.split(SOLUTION_REGEX);
+          starterCode = parts[0];
+          solutionCode = parts.slice(1).join('\n').trim();
+        } else {
+          // Check if followed by :::solution
+          let lookAhead = i;
+          while (lookAhead < lines.length && lines[lookAhead].trim().length === 0) {
+            lookAhead++;
+          }
+          if (lookAhead < lines.length && lines[lookAhead].trim().startsWith(':::solution')) {
+            i = lookAhead + 1;
+            const solLines: string[] = [];
+            while (i < lines.length && !lines[i].trim().startsWith(':::')) {
+              solLines.push(lines[i]);
+              i++;
+            }
+            if (i < lines.length && lines[i].trim().startsWith(':::')) {
+              i++;
+            }
+            solutionCode = solLines.join('\n').trim();
+          }
+        }
+
         blocks.push(
-          <div
+          <InteractiveCodeBlock
             key={`code-${currentCodeIdx}`}
-            className="my-5 rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-md"
-          >
-            {/* Code Block Header */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800/80 bg-slate-900/90 text-xs text-slate-400">
-              <span className="font-mono uppercase font-bold tracking-wider text-orange-400">
-                {lang}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleCopyCode(fullCode, currentCodeIdx)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
-                title="Sao chép đoạn mã"
-              >
-                {copiedIndex === currentCodeIdx ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400 font-semibold">Đã chép</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Sao chép</span>
-                  </>
-                )}
-              </button>
-            </div>
-            {/* Code Content */}
-            <pre className="p-4 text-xs md:text-sm font-mono text-slate-200 overflow-x-auto leading-relaxed">
-              <code>{fullCode}</code>
-            </pre>
-          </div>
+            initialCode={starterCode}
+            solutionCode={solutionCode}
+            language={lang}
+          />
         );
         continue;
       }

@@ -57,7 +57,7 @@ import { useUserStore } from '../store/userStore';
 import { useLayoutStore } from '../store/layoutStore';
 import { ProUpgradeModal } from '../components/payment/ProUpgradeModal';
 import { HypertextRenderer } from '../components/HypertextRenderer';
-import { SqlSandbox } from '../components/sql/SqlSandbox';
+import { CourseSandbox } from '../components/sandbox/CourseSandbox';
 
 export const USER_COURSE_TOPICS = [
   { id: 'ALL', name: 'Tất cả chủ đề', icon: Layers },
@@ -808,66 +808,89 @@ export const UserPage: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Right: Course Content Sidebar OR SQL Sandbox (Chiếm toàn bộ diện tích bên phải vừa được để trống) */}
-                    <div className="w-full lg:flex-1 min-w-0 space-y-4">
-                      {showSqlPlayground ? (
-                        <div className="space-y-4">
-                          {/* Tabs Switcher: chuyển qua lại giữa Giáo trình và SQL Sandbox */}
-                          <div className="p-1.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCourseDetailTab('LESSONS');
-                                setShowSqlPlayground(false);
-                              }}
-                              className="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-50 cursor-pointer"
-                            >
-                              <BookOpen className="w-3.5 h-3.5 text-orange-600" />
-                              <span>Giáo trình môn học</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowSqlPlayground(false)}
-                              className="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-orange-50 text-orange-700 border border-orange-200 shadow-xs cursor-pointer"
-                              title="Bấm để đóng SQL Sandbox và mở lại danh sách bài học"
-                            >
-                              <Terminal className="w-3.5 h-3.5 text-orange-600" />
-                              <span>SQL Sandbox (Đang mở)</span>
-                            </button>
-                          </div>
+                    {/* Right: Course Content Sidebar OR Code/SQL Sandbox */}
+                    {(() => {
+                      const isCourseSandboxEnabled = Boolean(
+                        activeCourse?.hasSandbox ?? (
+                          activeCourse?.code?.toLowerCase().includes('sql') ||
+                          activeCourse?.name?.toLowerCase().includes('sql')
+                        )
+                      );
+                      const courseSandboxTitle = activeCourse?.sandboxTitle || (
+                        activeCourse?.sandboxLanguage?.toUpperCase()
+                          ? `${activeCourse.sandboxLanguage.toUpperCase()} Sandbox`
+                          : 'SQL Sandbox'
+                      );
 
-                          {/* Khung Sandbox mở rộng chiếm toàn bộ diện tích còn lại */}
-                          <div className="h-[820px]">
-                            <SqlSandbox isEmbedded onClose={() => setShowSqlPlayground(false)} />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
-                          {/* Tabs Switcher */}
-                          <div className="p-2 bg-slate-50/70 border-b border-slate-200/80 flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCourseDetailTab('LESSONS');
-                                setShowSqlPlayground(false);
-                              }}
-                              className="flex-1 py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-white text-orange-700 shadow-xs border border-slate-200/80 cursor-pointer"
-                            >
-                              <BookOpen className="w-3.5 h-3.5 text-orange-600" />
-                              <span>Giáo trình</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowSqlPlayground(true)}
-                              className="flex-1 py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 cursor-pointer"
-                            >
-                              <Terminal className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>SQL Sandbox</span>
-                            </button>
-                          </div>
+                      return (
+                        <div className="w-full lg:flex-1 min-w-0 space-y-4">
+                          {isCourseSandboxEnabled && showSqlPlayground ? (
+                            <div className="space-y-4">
+                              {/* Tabs Switcher: chuyển qua lại giữa Giáo trình và Sandbox */}
+                              <div className="p-1.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCourseDetailTab('LESSONS');
+                                    setShowSqlPlayground(false);
+                                  }}
+                                  className="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-50 cursor-pointer"
+                                >
+                                  <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+                                  <span>Giáo trình môn học</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSqlPlayground(false)}
+                                  className="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-orange-50 text-orange-700 border border-orange-200 shadow-xs cursor-pointer"
+                                  title="Bấm để đóng Sandbox và mở lại danh sách bài học"
+                                >
+                                  <Terminal className="w-3.5 h-3.5 text-orange-600" />
+                                  <span>{courseSandboxTitle} (Đang mở)</span>
+                                </button>
+                              </div>
 
-                          {/* Tab Content */}
-                          <div className="p-4 max-h-[700px] overflow-y-auto space-y-3">
+                              {/* Khung Sandbox mở rộng chiếm toàn bộ diện tích còn lại */}
+                              <div className="h-[820px]">
+                                <CourseSandbox course={activeCourse} isEmbedded onClose={() => setShowSqlPlayground(false)} />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+                              {/* Tabs Switcher nếu môn học có Sandbox, hoặc Tiêu đề nếu không có */}
+                              {isCourseSandboxEnabled ? (
+                                <div className="p-2 bg-slate-50/70 border-b border-slate-200/80 flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCourseDetailTab('LESSONS');
+                                      setShowSqlPlayground(false);
+                                    }}
+                                    className="flex-1 py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-white text-orange-700 shadow-xs border border-slate-200/80 cursor-pointer"
+                                  >
+                                    <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+                                    <span>Giáo trình</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowSqlPlayground(true)}
+                                    className="flex-1 py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-800 cursor-pointer"
+                                  >
+                                    <Terminal className="w-3.5 h-3.5 text-indigo-600" />
+                                    <span>{courseSandboxTitle}</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="p-3 bg-slate-50/70 border-b border-slate-200/80 flex items-center justify-between">
+                                  <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                                    <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+                                    <span>Giáo trình môn học</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Tab Content */}
+                              <div className="p-4 max-h-[700px] overflow-y-auto space-y-3">
                           {/* TAB 1: CURRICULUM (CHAPTERS & LESSONS) */}
                           {courseDetailTab === 'LESSONS' && (
                             courseChapters.length === 0 || totalLessonsCount === 0 ? (
@@ -1085,7 +1108,9 @@ export const UserPage: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </>
               );
