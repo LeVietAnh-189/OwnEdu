@@ -1495,4 +1495,78 @@ apiRouter.post('/payment/cancel/:orderCode', (req, res) => {
   return successResponse(res, { message: 'Đã hủy đơn hàng.', order: updated });
 });
 
+// ========================================================
+// 8. BẢNG XẾP HẠNG & TIẾN ĐỘ BÀI GIẢNG (RANKING & LEADERBOARD)
+// ========================================================
+
+// 8.1 Lấy bảng xếp hạng vinh danh (Weekly / All-Time)
+apiRouter.get('/rank/leaderboard', (req: Request, res: Response) => {
+  const timeframe = (req.query.timeframe === 'all' ? 'all' : 'weekly') as 'weekly' | 'all';
+  const currentUser = db.getCurrentUser();
+  const currentUserId = currentUser?.id || 'usr_0001';
+
+  const data = db.getLeaderboard(timeframe, currentUserId);
+  return successResponse(res, data);
+});
+
+// 8.2 Lấy danh sách ID các bài giảng nhỏ đã hoàn thành của khóa học
+apiRouter.get('/rank/progress/:courseId', (req: Request, res: Response) => {
+  const { courseId } = req.params;
+  const currentUser = db.getCurrentUser();
+  const currentUserId = currentUser?.id || 'usr_0001';
+
+  const completedLessonIds = db.getCompletedLessonIds(currentUserId, courseId);
+  const totalCompleted = db.getCompletedLessons(currentUserId).length;
+  const rankBadge = db.getRankBadge(totalCompleted);
+
+  return successResponse(res, {
+    courseId,
+    completedLessonIds,
+    totalCompleted,
+    rankBadge
+  });
+});
+
+// 8.3 Toggle đánh dấu hoàn thành 1 bài giảng nhỏ
+apiRouter.post('/rank/toggle-lesson', (req: Request, res: Response) => {
+  const { courseId, lessonId } = req.body;
+  if (!lessonId) {
+    return errorResponse(res, 'E-RANK-001', 'Thiếu lessonId.', 400);
+  }
+
+  const currentUser = db.getCurrentUser();
+  const currentUserId = currentUser?.id || 'usr_0001';
+
+  const result = db.toggleLessonCompletion(currentUserId, courseId || '', lessonId);
+  return successResponse(res, {
+    message: result.completed ? 'Đã hoàn thành bài học!' : 'Đã bỏ đánh dấu bài học.',
+    ...result
+  });
+});
+
+// 8.4 Lấy hồ sơ xếp hạng và cấp bậc cá nhân
+apiRouter.get('/rank/my-profile', (_req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  const currentUserId = currentUser?.id || 'usr_0001';
+
+  const userLessons = db.getCompletedLessons(currentUserId);
+  const totalCompleted = userLessons.length;
+  const rankBadge = db.getRankBadge(totalCompleted);
+
+  const daysSet = new Set(userLessons.map(l => l.completedAt.split('T')[0]));
+  const streakDays = Math.min(daysSet.size, 14) || (totalCompleted > 0 ? 1 : 0);
+
+  return successResponse(res, {
+    userId: currentUserId,
+    fullName: currentUser?.fullName || 'Học viên',
+    email: currentUser?.email || '',
+    role: currentUser?.role || 'USER',
+    tier: currentUser?.tier || 'FREE',
+    avatarChar: (currentUser?.fullName || 'H').charAt(0).toUpperCase(),
+    totalCompletedLessons: totalCompleted,
+    currentStreakDays: streakDays,
+    rankBadge
+  });
+});
+
 

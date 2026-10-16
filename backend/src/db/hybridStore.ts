@@ -17,7 +17,12 @@ import {
   PaymentOrder,
   PaymentPlan,
   PaymentPlanId,
-  PaymentOrderStatus
+  PaymentOrderStatus,
+  UserCompletedLesson,
+  RankBadge,
+  RankTier,
+  UserRankProfile,
+  LeaderboardResponse
 } from '../types.js';
 
 export interface SystemSettings {
@@ -133,6 +138,7 @@ interface DatabaseSchema {
   services?: SystemServiceConfig[];
   paymentOrders?: PaymentOrder[];
   activeUserId?: string;
+  completedLessons?: UserCompletedLesson[];
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -879,6 +885,248 @@ export class HybridStore {
       users: userList,
       courses: this.data.courses || []
     };
+  }
+
+  public static readonly RANK_TIERS: Record<RankTier, RankBadge> = {
+    NEWBIE: {
+      tier: 'NEWBIE',
+      title: 'Tân Binh',
+      icon: '🥉',
+      minLessons: 0,
+      color: 'text-amber-700 border-amber-300 bg-amber-50',
+      bgGradient: 'from-amber-600 to-amber-700'
+    },
+    DILIGENT: {
+      tier: 'DILIGENT',
+      title: 'Chăm Chỉ',
+      icon: '🥈',
+      minLessons: 10,
+      color: 'text-slate-700 border-slate-300 bg-slate-100',
+      bgGradient: 'from-slate-500 to-slate-700'
+    },
+    WARRIOR: {
+      tier: 'WARRIOR',
+      title: 'Chiến Thần',
+      icon: '🥇',
+      minLessons: 30,
+      color: 'text-amber-800 border-amber-400 bg-amber-100',
+      bgGradient: 'from-amber-500 to-orange-500'
+    },
+    ELITE: {
+      tier: 'ELITE',
+      title: 'Tinh Anh',
+      icon: '💎',
+      minLessons: 60,
+      color: 'text-cyan-700 border-cyan-300 bg-cyan-50',
+      bgGradient: 'from-cyan-500 to-blue-600'
+    },
+    MASTER: {
+      tier: 'MASTER',
+      title: 'Huyền Thoại',
+      icon: '👑',
+      minLessons: 100,
+      color: 'text-purple-700 border-purple-300 bg-purple-50',
+      bgGradient: 'from-purple-600 via-pink-600 to-amber-500'
+    }
+  };
+
+  public getRankBadge(count: number): RankBadge {
+    if (count >= 100) return HybridStore.RANK_TIERS.MASTER;
+    if (count >= 60) return HybridStore.RANK_TIERS.ELITE;
+    if (count >= 30) return HybridStore.RANK_TIERS.WARRIOR;
+    if (count >= 10) return HybridStore.RANK_TIERS.DILIGENT;
+    return HybridStore.RANK_TIERS.NEWBIE;
+  }
+
+  // --- User Completed Lessons & Leaderboard ---
+  public getCompletedLessons(userId: string): UserCompletedLesson[] {
+    if (!this.data.completedLessons) {
+      this.data.completedLessons = [];
+    }
+    return this.data.completedLessons.filter(l => l.userId === userId);
+  }
+
+  public getCompletedLessonIds(userId: string, courseId?: string): string[] {
+    const list = this.getCompletedLessons(userId);
+    if (courseId) {
+      return list.filter(l => l.courseId === courseId).map(l => l.lessonId);
+    }
+    return list.map(l => l.lessonId);
+  }
+
+  public toggleLessonCompletion(userId: string, courseId: string, lessonId: string): {
+    completed: boolean;
+    completedLessonIds: string[];
+    totalCompleted: number;
+    rankBadge: RankBadge;
+  } {
+    if (!this.data.completedLessons) {
+      this.data.completedLessons = [];
+    }
+
+    const existingIndex = this.data.completedLessons.findIndex(
+      l => l.userId === userId && l.lessonId === lessonId
+    );
+
+    let completed = false;
+    if (existingIndex >= 0) {
+      this.data.completedLessons.splice(existingIndex, 1);
+      completed = false;
+    } else {
+      this.data.completedLessons.push({
+        id: `cpl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        userId,
+        courseId,
+        lessonId,
+        completedAt: new Date().toISOString()
+      });
+      completed = true;
+    }
+
+    this.persist();
+
+    const userCompleted = this.getCompletedLessons(userId);
+    const completedLessonIds = userCompleted.map(l => l.lessonId);
+    const totalCompleted = userCompleted.length;
+    const rankBadge = this.getRankBadge(totalCompleted);
+
+    return {
+      completed,
+      completedLessonIds,
+      totalCompleted,
+      rankBadge
+    };
+  }
+
+  public getLeaderboard(timeframe: 'weekly' | 'all' = 'weekly', currentUserId: string): LeaderboardResponse {
+    if (!this.data.completedLessons || this.data.completedLessons.length === 0) {
+      this.seedInitialCompletedLessons();
+    }
+
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const distanceToMonday = (dayOfWeek + 6) % 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - distanceToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const users = this.data.users || [];
+    const completedLessons = this.data.completedLessons || [];
+
+    const profiles: UserRankProfile[] = users.map(u => {
+      const uLessons = completedLessons.filter(l => l.userId === u.id);
+      const totalCount = uLessons.length;
+      const weeklyLessons = uLessons.filter(l => new Date(l.completedAt) >= monday);
+      const weeklyCount = weeklyLessons.length;
+
+      const daysSet = new Set(uLessons.map(l => l.completedAt.split('T')[0]));
+      const streakDays = Math.min(daysSet.size, 14) || (totalCount > 0 ? 1 : 0);
+
+      const latest = [...uLessons].sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0];
+
+      return {
+        userId: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        role: u.role,
+        tier: u.tier,
+        avatarChar: (u.fullName || 'U').charAt(0).toUpperCase(),
+        totalCompletedLessons: totalCount,
+        weeklyCompletedLessons: weeklyCount,
+        currentStreakDays: streakDays,
+        rankBadge: this.getRankBadge(totalCount),
+        rankPosition: 0,
+        lastActiveAt: latest ? latest.completedAt : undefined
+      };
+    });
+
+    profiles.sort((a, b) => {
+      if (timeframe === 'weekly') {
+        if (b.weeklyCompletedLessons !== a.weeklyCompletedLessons) {
+          return b.weeklyCompletedLessons - a.weeklyCompletedLessons;
+        }
+      }
+      if (b.totalCompletedLessons !== a.totalCompletedLessons) {
+        return b.totalCompletedLessons - a.totalCompletedLessons;
+      }
+      return a.fullName.localeCompare(b.fullName, 'vi');
+    });
+
+    profiles.forEach((p, idx) => {
+      p.rankPosition = idx + 1;
+    });
+
+    const myRank = profiles.find(p => p.userId === currentUserId) || {
+      userId: currentUserId,
+      fullName: 'Học viên',
+      email: '',
+      role: 'USER',
+      tier: 'FREE',
+      avatarChar: 'H',
+      totalCompletedLessons: 0,
+      weeklyCompletedLessons: 0,
+      currentStreakDays: 0,
+      rankBadge: this.getRankBadge(0),
+      rankPosition: profiles.length + 1
+    };
+
+    return {
+      timeframe,
+      leaderboard: profiles,
+      myRank,
+      stats: {
+        totalStudents: users.length,
+        totalCompletedLessons: completedLessons.length,
+        topPerformer: profiles[0] || null
+      }
+    };
+  }
+
+  public seedInitialCompletedLessons(): void {
+    if (this.data.completedLessons && this.data.completedLessons.length > 0) return;
+
+    const sampleData: Array<{ userId: string; courseId: string; lessonId: string; daysAgo: number }> = [
+      // usr_0001 (Nguyễn Văn A - Top 1 Chiến Thần)
+      { userId: 'usr_0001', courseId: 'course-1', lessonId: 'les-1', daysAgo: 0 },
+      { userId: 'usr_0001', courseId: 'course-1', lessonId: 'les-2', daysAgo: 0 },
+      { userId: 'usr_0001', courseId: 'course-1', lessonId: 'les-3', daysAgo: 1 },
+      { userId: 'usr_0001', courseId: 'course-2', lessonId: 'les-4', daysAgo: 1 },
+      { userId: 'usr_0001', courseId: 'course-2', lessonId: 'les-5', daysAgo: 2 },
+      { userId: 'usr_0001', courseId: 'course-3', lessonId: 'les-6', daysAgo: 2 },
+      { userId: 'usr_0001', courseId: 'course-3', lessonId: 'les-7', daysAgo: 3 },
+      { userId: 'usr_0001', courseId: 'course-4', lessonId: 'les-8', daysAgo: 3 },
+      { userId: 'usr_0001', courseId: 'course-4', lessonId: 'les-9', daysAgo: 4 },
+      { userId: 'usr_0001', courseId: 'course-5', lessonId: 'les-10', daysAgo: 4 },
+      { userId: 'usr_0001', courseId: 'course-5', lessonId: 'les-11', daysAgo: 5 },
+      { userId: 'usr_0001', courseId: 'course-1', lessonId: 'les-12', daysAgo: 6 },
+      // usr_0003 (Nguyễn Văn C - Top 2 Chăm Chỉ)
+      { userId: 'usr_0003', courseId: 'course-1', lessonId: 'les-1', daysAgo: 0 },
+      { userId: 'usr_0003', courseId: 'course-1', lessonId: 'les-2', daysAgo: 1 },
+      { userId: 'usr_0003', courseId: 'course-2', lessonId: 'les-4', daysAgo: 1 },
+      { userId: 'usr_0003', courseId: 'course-3', lessonId: 'les-6', daysAgo: 2 },
+      { userId: 'usr_0003', courseId: 'course-3', lessonId: 'les-7', daysAgo: 3 },
+      { userId: 'usr_0003', courseId: 'course-4', lessonId: 'les-8', daysAgo: 4 },
+      { userId: 'usr_0003', courseId: 'course-5', lessonId: 'les-10', daysAgo: 5 },
+      // usr_0002 (Nguyễn Văn B - Top 3)
+      { userId: 'usr_0002', courseId: 'course-1', lessonId: 'les-1', daysAgo: 1 },
+      { userId: 'usr_0002', courseId: 'course-2', lessonId: 'les-4', daysAgo: 2 },
+      { userId: 'usr_0002', courseId: 'course-3', lessonId: 'les-6', daysAgo: 3 },
+      { userId: 'usr_0002', courseId: 'course-4', lessonId: 'les-8', daysAgo: 4 },
+      // usr_admin_default
+      { userId: 'usr_admin_default', courseId: 'course-1', lessonId: 'les-1', daysAgo: 2 },
+      { userId: 'usr_admin_default', courseId: 'course-2', lessonId: 'les-4', daysAgo: 3 }
+    ];
+
+    const now = Date.now();
+    this.data.completedLessons = sampleData.map((item, idx) => ({
+      id: `cpl_seed_${idx + 1}`,
+      userId: item.userId,
+      courseId: item.courseId,
+      lessonId: item.lessonId,
+      completedAt: new Date(now - item.daysAgo * 86400000).toISOString()
+    }));
+
+    this.persist();
   }
 
   // --- Seed Data Initializer ---

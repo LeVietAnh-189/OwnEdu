@@ -330,3 +330,49 @@ export interface PaymentOrder {
   cancelledAt?: string;
   rawWebhookData?: any;
 }
+
+// User Lesson Progress & Gamification Leaderboard
+export interface UserCompletedLesson {
+  id: string;
+  userId: string;
+  courseId: string;
+  lessonId: string;
+  completedAt: string; // ISO date string
+}
+
+export type RankTier = 'NEWBIE' | 'DILIGENT' | 'WARRIOR' | 'ELITE' | 'MASTER';
+
+export interface RankBadge {
+  tier: RankTier;
+  title: string;       // "Tân Binh", "Chăm Chỉ", "Chiến Thần", "Tinh Anh", "Huyền Thoại"
+  icon: string;        // "🥉", "🥈", "🥇", "💎", "👑"
+  minLessons: number;  // 0, 10, 30, 60, 100
+  color: string;       // Tailwind text/border color token
+  bgGradient: string;  // Tailwind gradient token
+}
+
+export interface UserRankProfile {
+  userId: string;
+  fullName: string;
+  email: string;
+  role: UserRole;
+  tier: UserTier;
+  avatarChar: string;
+  totalCompletedLessons: number;
+  weeklyCompletedLessons: number;
+  currentStreakDays: number;
+  rankBadge: RankBadge;
+  rankPosition: number;
+  lastActiveAt?: string;
+}
+
+export interface LeaderboardResponse {
+  timeframe: 'weekly' | 'all';
+  leaderboard: UserRankProfile[];
+  myRank: UserRankProfile;
+  stats: {
+    totalStudents: number;
+    totalCompletedLessons: number;
+    topPerformer: UserRankProfile | null;
+  };
+}
