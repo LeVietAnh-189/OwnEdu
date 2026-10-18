@@ -41,14 +41,40 @@ import {
   AlignRight,
   Bold,
   Minus,
-  X
+  X,
+  HelpCircle
 } from 'lucide-react';
 import { AdminAPI, VideoAPI, ImageAPI } from '../services/api';
 import { Course, Chapter, Lesson, VideoItem } from '../types';
 import { HypertextRenderer } from '../components/HypertextRenderer';
 import { SyntaxCodeEditor } from '../components/common/SyntaxCodeEditor';
 
-export type BlockType = 'heading' | 'paragraph' | 'callout' | 'code' | 'image' | 'video' | 'table';
+export type BlockType = 'heading' | 'paragraph' | 'callout' | 'code' | 'image' | 'video' | 'table' | 'quiz' | 'flashcard';
+
+export interface EditorQuizOption {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+}
+
+export interface EditorQuizData {
+  title?: string;
+  question: string;
+  options: EditorQuizOption[];
+  explanation?: string;
+}
+
+export interface EditorFlashcardItem {
+  id: string;
+  front: string;
+  back: string;
+}
+
+export interface EditorFlashcardData {
+  title?: string;
+  description?: string;
+  cards: EditorFlashcardItem[];
+}
 
 export interface EditorTableData {
   headers: string[];
@@ -73,6 +99,8 @@ export interface EditorBlock {
   videoUrl?: string;
   videoCaption?: string;
   tableData?: EditorTableData;
+  quizData?: EditorQuizData;
+  flashcardData?: EditorFlashcardData;
 }
 
 const extractYoutubeId = (url: string): string | null => {
@@ -102,8 +130,8 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
   while (i < lines.length) {
     const line = lines[i];
 
-    // 1. Heading (## or #)
-    if (line.startsWith('## ') || line.startsWith('# ')) {
+    // 1. Heading (#, ##, ###, ####, etc.)
+    if (/^#{1,6}\s+/.test(line)) {
       const heading = line.replace(/^#+\s*/, '').trim();
       blocks.push({
         id: `blk_${Date.now()}_${counter++}`,
@@ -136,6 +164,174 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
       continue;
     }
 
+    // 2.3 Flashcard block (:::flashcard [title])
+    if (line.trim().startsWith(':::flashcard')) {
+      const fcTitle = line.trim().slice(12).trim();
+      const contentLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(':::')) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length && lines[i].trim().startsWith(':::')) {
+        i++;
+      }
+
+      const cards: EditorFlashcardItem[] = [];
+      const cardChunks: string[][] = [[]];
+      for (const fLine of contentLines) {
+        if (fLine.trim() === '---' || fLine.trim() === '===') {
+          cardChunks.push([]);
+        } else {
+          cardChunks[cardChunks.length - 1].push(fLine);
+        }
+      }
+
+      for (const chunk of cardChunks) {
+        if (chunk.length === 0) continue;
+        let front = '';
+        let back = '';
+        let activeField: 'front' | 'back' | null = null;
+
+        for (const cLine of chunk) {
+          const trimmed = cLine.trim();
+          if (!trimmed) continue;
+
+          const frontMatch = trimmed.match(/^(?:Front|Mặt\s*trước|Hỏi|\*\*Hỏi\*\*|Q):\s*(.*)$/i);
+          const backMatch = trimmed.match(/^(?:Back|Mặt\s*sau|Trả\s*lời|\*\*Trả\s*lời\*\*|A|Đáp\s*án):\s*(.*)$/i);
+
+          if (frontMatch) {
+            activeField = 'front';
+            front = (front ? front + '\n' : '') + frontMatch[1].trim();
+          } else if (backMatch) {
+            activeField = 'back';
+            back = (back ? back + '\n' : '') + backMatch[1].trim();
+          } else if (activeField === 'front') {
+            front = (front ? front + '\n' : '') + trimmed;
+          } else if (activeField === 'back') {
+            back = (back ? back + '\n' : '') + trimmed;
+          } else if (!front) {
+            front = trimmed;
+            activeField = 'front';
+          } else {
+            back = (back ? back + '\n' : '') + trimmed;
+            activeField = 'back';
+          }
+        }
+
+        if (front || back) {
+          cards.push({
+            id: `card_${Date.now()}_${cards.length + 1}`,
+            front: front.trim() || 'Câu hỏi / Khái niệm',
+            back: back.trim() || 'Câu trả lời / Giải thích'
+          });
+        }
+      }
+
+      if (cards.length === 0) {
+        cards.push({
+          id: `card_${Date.now()}_1`,
+          front: 'Khái niệm hoặc câu hỏi ôn tập',
+          back: 'Câu trả lời hoặc giải thích chi tiết'
+        });
+      }
+
+      blocks.push({
+        id: `blk_${Date.now()}_${counter++}`,
+        type: 'flashcard',
+        flashcardData: {
+          title: fcTitle || 'Ôn nhanh bằng flashcard',
+          description: 'Nhấp vào từng thẻ để lật và tự kiểm tra trước khi làm quiz.',
+          cards
+        }
+      });
+      continue;
+    }
+
+    // 2.5 Quiz block (:::quiz [title])
+    if (line.trim().startsWith(':::quiz')) {
+      const qCaption = line.trim().slice(7).trim();
+      const contentLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(':::')) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length && lines[i].trim().startsWith(':::')) {
+        i++;
+      }
+
+      let title = qCaption;
+      const options: EditorQuizOption[] = [];
+      let explanation = '';
+      const questionLines: string[] = [];
+
+      for (const rawL of contentLines) {
+        const trimmed = rawL.trim();
+        const optMatch = trimmed.match(/^-\s*\[([ xX*])\]\s*(.*)$/) || trimmed.match(/^-\s*\(([ xX*])\)\s*(.*)$/);
+        if (optMatch) {
+          const isCorrect = optMatch[1].toLowerCase() === 'x' || optMatch[1] === '*';
+          const cleanText = optMatch[2].replace(/^[A-Da-d][.)\s-]\s*/, '').trim() || optMatch[2].trim();
+          options.push({
+            id: `opt_${Date.now()}_${options.length + 1}`,
+            text: cleanText,
+            isCorrect
+          });
+        } else if (trimmed.startsWith('- ')) {
+          const cleanText = trimmed.slice(2).replace(/^[A-Da-d][.)\s-]\s*/, '').trim() || trimmed.slice(2).trim();
+          options.push({
+            id: `opt_${Date.now()}_${options.length + 1}`,
+            text: cleanText,
+            isCorrect: options.length === 0
+          });
+        } else if (trimmed.startsWith('>')) {
+          explanation = (explanation ? explanation + '\n' : '') + trimmed.replace(/^>\s*/, '').trim();
+        } else if (trimmed.length > 0 && options.length === 0) {
+          questionLines.push(trimmed.replace(/^\*\*|\*\*$/g, '').trim());
+        }
+      }
+
+      let question = '';
+      if (questionLines.length > 1 && !title) {
+        if (questionLines[0].length < 45 && !questionLines[0].includes('?')) {
+          title = questionLines[0];
+          question = questionLines.slice(1).join('\n\n');
+        } else {
+          question = questionLines.join('\n\n');
+        }
+      } else {
+        question = questionLines.join('\n\n');
+      }
+
+      if (!question && title) {
+        question = title;
+        title = '';
+      }
+
+      if (options.length === 0) {
+        options.push(
+          { id: 'opt_1', text: 'Phương án A (Đáp án đúng)', isCorrect: true },
+          { id: 'opt_2', text: 'Phương án B', isCorrect: false }
+        );
+      }
+
+      if (!options.some(o => o.isCorrect)) {
+        options[0].isCorrect = true;
+      }
+
+      blocks.push({
+        id: `blk_${Date.now()}_${counter++}`,
+        type: 'quiz',
+        quizData: {
+          title,
+          question: question || 'Câu hỏi trắc nghiệm:',
+          options,
+          explanation
+        }
+      });
+      continue;
+    }
+
     // 3. Callout block (:::keypoint, :::tip, etc.)
     if (line.trim().startsWith(':::')) {
       const header = line.trim().slice(3).trim();
@@ -154,6 +350,83 @@ const parseMarkdownToBlocks = (raw: string): EditorBlock[] => {
       }
       if (i < lines.length && lines[i].trim().startsWith(':::')) {
         i++;
+      }
+
+      // Tự động nhận diện bài tập trắc nghiệm cũ chuyển hóa thành Khối Trắc Nghiệm chuẩn
+      if (calloutType === 'exercise' && calloutTitle.toLowerCase().includes('trắc nghiệm')) {
+        let question = '';
+        const options: EditorQuizOption[] = [];
+        for (const cL of contentLines) {
+          const trimmed = cL.trim();
+          if (trimmed.startsWith('- ')) {
+            options.push({
+              id: `opt_${Date.now()}_${options.length + 1}`,
+              text: trimmed.slice(2).trim(),
+              isCorrect: options.length === 0
+            });
+          } else if (trimmed.length > 0 && options.length === 0) {
+            question = (question ? question + '\n' : '') + trimmed.replace(/^\*\*|\*\*$/g, '').trim();
+          }
+        }
+        if (options.length > 0) {
+          blocks.push({
+            id: `blk_${Date.now()}_${counter++}`,
+            type: 'quiz',
+            quizData: {
+              question: question || calloutTitle,
+              options,
+              explanation: ''
+            }
+          });
+          continue;
+        }
+      }
+
+      // Tự động nhận diện khối ôn tập Hỏi/Trả lời chuyển hóa thành Khối Flashcard chuẩn
+      const isQACallout = contentLines.some(l => /\b(hỏi|\*\*hỏi\*\*|front)\b/i.test(l)) &&
+                          contentLines.some(l => /\b(trả lời|\*\*trả lời\*\*|back)\b/i.test(l));
+      if (isQACallout) {
+        const cards: EditorFlashcardItem[] = [];
+        let front = '';
+        let back = '';
+        let active: 'front' | 'back' | null = null;
+        for (const cL of contentLines) {
+          const tr = cL.trim();
+          if (!tr) continue;
+          const fM = tr.match(/^(?:Front|Mặt\s*trước|Hỏi|\*\*Hỏi\*\*|Q):\s*(.*)$/i);
+          const bM = tr.match(/^(?:Back|Mặt\s*sau|Trả\s*lời|\*\*Trả\s*lời\*\*|A|Đáp\s*án):\s*(.*)$/i);
+          if (fM) {
+            if (front && back) {
+              cards.push({ id: `card_${Date.now()}_${cards.length + 1}`, front, back });
+              front = '';
+              back = '';
+            }
+            active = 'front';
+            front = fM[1].trim();
+          } else if (bM) {
+            active = 'back';
+            back = bM[1].trim();
+          } else if (active === 'front') {
+            front = (front ? front + '\n' : '') + tr;
+          } else if (active === 'back') {
+            back = (back ? back + '\n' : '') + tr;
+          }
+        }
+        if (front && back) {
+          cards.push({ id: `card_${Date.now()}_${cards.length + 1}`, front, back });
+        }
+        if (cards.length > 0) {
+          blocks.push({
+            id: `blk_${Date.now()}_${counter++}`,
+            type: 'flashcard',
+            flashcardData: {
+              title: calloutTitle || 'Ôn nhanh bằng flashcard',
+              description: 'Nhấp vào từng thẻ để lật và tự kiểm tra trước khi làm quiz.',
+              cards
+            }
+          });
+          continue;
+        }
       }
 
       blocks.push({
@@ -371,6 +644,17 @@ const serializeBlocksToMarkdown = (blocks: EditorBlock[]): string => {
 
         parts.push([headerLine, alignLine, ...rowLines].join('\n'));
       }
+    } else if (block.type === 'quiz' && block.quizData) {
+      const title = block.quizData.title && block.quizData.title.trim() ? ` ${block.quizData.title.trim()}` : '';
+      const q = block.quizData.question || 'Câu hỏi trắc nghiệm:';
+      const opts = (block.quizData.options || []).map(o => `- [${o.isCorrect ? 'x' : ' '}] ${o.text}`).join('\n');
+      const expl = block.quizData.explanation && block.quizData.explanation.trim() ? `\n> ${block.quizData.explanation.trim()}` : '';
+      parts.push(`:::quiz${title}\n${q}\n\n${opts}${expl}\n:::`);
+    } else if (block.type === 'flashcard' && block.flashcardData) {
+      const title = block.flashcardData.title && block.flashcardData.title.trim() ? ` ${block.flashcardData.title.trim()}` : '';
+      const cards = block.flashcardData.cards || [];
+      const cardTexts = cards.map(c => `Front: ${c.front.trim()}\nBack: ${c.back.trim()}`);
+      parts.push(`:::flashcard${title}\n${cardTexts.join('\n---\n')}\n:::`);
     }
   }
 
@@ -602,6 +886,34 @@ export const AdminLessonEditorPage: React.FC = () => {
         ],
         alignments: ['center', 'center', 'center'],
         isHeaderBold: false
+      };
+    } else if (type === 'quiz') {
+      newBlock.quizData = extra?.quizData || {
+        question: 'Câu hỏi trắc nghiệm kiểm tra kiến thức?',
+        options: [
+          { id: 'opt_1', text: 'Phương án A (Đáp án đúng)', isCorrect: true },
+          { id: 'opt_2', text: 'Phương án B', isCorrect: false },
+          { id: 'opt_3', text: 'Phương án C', isCorrect: false },
+          { id: 'opt_4', text: 'Phương án D', isCorrect: false },
+        ],
+        explanation: 'Giải thích chi tiết vì sao phương án này chính xác...'
+      };
+    } else if (type === 'flashcard') {
+      newBlock.flashcardData = extra?.flashcardData || {
+        title: 'Ôn nhanh bằng flashcard',
+        description: 'Nhấp vào từng thẻ để lật và tự kiểm tra trước khi làm quiz.',
+        cards: [
+          {
+            id: `card_${Date.now()}_1`,
+            front: 'Cơ sở dữ liệu (database) là gì?',
+            back: 'Nơi lưu trữ dữ liệu có tổ chức, được quản lý bởi DBMS (PostgreSQL, MySQL, SQL Server...). Giúp lưu trữ, truy xuất và bảo vệ dữ liệu hiệu quả.'
+          },
+          {
+            id: `card_${Date.now()}_2`,
+            front: 'Bảng (Table) trong database gồm những thành phần nào?',
+            back: 'Gồm các hàng (rows/records) đại diện cho từng thực thể và các cột (columns/fields) đại diện cho các thuộc tính.'
+          }
+        ]
       };
     }
 
@@ -1661,6 +1973,371 @@ export const AdminLessonEditorPage: React.FC = () => {
                     </div>
                   )}
 
+                  {/* 8. QUIZ BLOCK (Khối Trắc Nghiệm) */}
+                  {block.type === 'quiz' && block.quizData && (
+                    <div className="space-y-4 pr-14">
+                      {/* Top Bar of Quiz Block */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-purple-50/80 border border-purple-200/80 rounded-2xl p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                            <HelpCircle className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-purple-950 block">Khối Câu Hỏi Trắc Nghiệm</span>
+                            <span className="text-[11px] text-purple-700">Tạo câu hỏi tương tác nhiều lựa chọn kiểm tra kiến thức</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentOpts = block.quizData?.options || [];
+                            const nextLetter = String.fromCharCode(65 + currentOpts.length);
+                            const newOpt: EditorQuizOption = {
+                              id: `opt_${Date.now()}_${currentOpts.length + 1}`,
+                              text: `Phương án ${nextLetter}`,
+                              isCorrect: false
+                            };
+                            updateBlock(block.id, {
+                              quizData: {
+                                ...block.quizData!,
+                                options: [...currentOpts, newOpt]
+                              }
+                            });
+                          }}
+                          disabled={(block.quizData.options?.length || 0) >= 6}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-purple-100 text-purple-700 border border-purple-200 transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-40"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Thêm phương án</span>
+                        </button>
+                      </div>
+
+                      {/* Question Textarea */}
+                      {/* Title and Question */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            Tiêu đề khối (tùy chọn):
+                          </label>
+                          <input
+                            type="text"
+                            value={block.quizData.title || ''}
+                            onChange={(e) => updateBlock(block.id, {
+                              quizData: {
+                                ...block.quizData!,
+                                title: e.target.value
+                              }
+                            })}
+                            placeholder="Ví dụ: Kiểm tra nhanh, Khởi động..."
+                            className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-xs sm:text-sm font-semibold text-slate-800 transition"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1">
+                            <span>Nội dung câu hỏi:</span>
+                            <span className="text-rose-500">*</span>
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={block.quizData.question || ''}
+                            onChange={(e) => updateBlock(block.id, {
+                              quizData: {
+                                ...block.quizData!,
+                                question: e.target.value
+                              }
+                            })}
+                            placeholder="Nhập nội dung câu hỏi trắc nghiệm chi tiết tại đây..."
+                            className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-xs sm:text-sm font-semibold text-slate-900 resize-none transition"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Options List */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                          <span>Các phương án lựa chọn (Bấm nút tròn để chọn 1 đáp án đúng):</span>
+                          <span className="text-[11px] font-normal text-slate-400">Tối thiểu 2, tối đa 6 phương án</span>
+                        </label>
+                        <div className="space-y-2">
+                          {block.quizData.options.map((opt, optIdx) => {
+                            const letter = String.fromCharCode(65 + optIdx);
+                            return (
+                              <div
+                                key={opt.id || optIdx}
+                                className={`flex items-center gap-2 p-2 rounded-2xl border transition-all ${
+                                  opt.isCorrect 
+                                    ? 'border-emerald-300 bg-emerald-50/60 shadow-xs' 
+                                    : 'border-slate-200 bg-white hover:border-slate-300'
+                                }`}
+                              >
+                                {/* Radio check for correct answer */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updatedOpts = block.quizData!.options.map((o, idx) => ({
+                                      ...o,
+                                      isCorrect: idx === optIdx
+                                    }));
+                                    updateBlock(block.id, {
+                                      quizData: {
+                                        ...block.quizData!,
+                                        options: updatedOpts
+                                      }
+                                    });
+                                  }}
+                                  className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition-all cursor-pointer ${
+                                    opt.isCorrect
+                                      ? 'bg-emerald-600 text-white shadow-xs'
+                                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                  }`}
+                                  title={opt.isCorrect ? 'Đáp án đúng' : 'Bấm để chọn làm đáp án đúng'}
+                                >
+                                  {opt.isCorrect ? <Check className="w-4 h-4 stroke-[3]" /> : letter}
+                                </button>
+
+                                {/* Option text input */}
+                                <input
+                                  type="text"
+                                  value={opt.text}
+                                  onChange={(e) => {
+                                    const updatedOpts = block.quizData!.options.map((o, idx) => 
+                                      idx === optIdx ? { ...o, text: e.target.value } : o
+                                    );
+                                    updateBlock(block.id, {
+                                      quizData: {
+                                        ...block.quizData!,
+                                        options: updatedOpts
+                                      }
+                                    });
+                                  }}
+                                  placeholder={`Nội dung phương án ${letter}...`}
+                                  className={`flex-1 bg-transparent px-2.5 py-1.5 text-xs sm:text-sm focus:outline-none ${
+                                    opt.isCorrect ? 'font-bold text-emerald-950' : 'font-normal text-slate-800'
+                                  }`}
+                                />
+
+                                {opt.isCorrect && (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-200/80 text-emerald-800 shrink-0">
+                                    Đáp án đúng
+                                  </span>
+                                )}
+
+                                {/* Delete option button if > 2 */}
+                                {block.quizData!.options.length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const remaining = block.quizData!.options.filter((_, idx) => idx !== optIdx);
+                                      if (opt.isCorrect && remaining.length > 0) {
+                                        remaining[0].isCorrect = true;
+                                      }
+                                      updateBlock(block.id, {
+                                        quizData: {
+                                          ...block.quizData!,
+                                          options: remaining
+                                        }
+                                      });
+                                    }}
+                                    className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                                    title="Xóa phương án này"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Explanation Input */}
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-purple-600" />
+                          <span>Lời giải thích chi tiết (hiển thị khi học viên trả lời xong):</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={block.quizData.explanation || ''}
+                          onChange={(e) => updateBlock(block.id, {
+                            quizData: {
+                              ...block.quizData!,
+                              explanation: e.target.value
+                            }
+                          })}
+                          placeholder="Giải thích vì sao đáp án này đúng, căn cứ kiến thức bài học..."
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 text-xs text-slate-700 transition"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 8. FLASHCARD BLOCK */}
+                  {block.type === 'flashcard' && block.flashcardData && (
+                    <div className="space-y-4 pr-14">
+                      {/* Flashcard Header / Action Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                            <Layers className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-indigo-950 block">Khối Flashcard (Thẻ ghi nhớ lật tương tác)</span>
+                            <span className="text-[11px] text-indigo-700">Bộ thẻ ôn tập 3D lật mặt giúp người học tự kiểm tra kiến thức</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentCards = block.flashcardData?.cards || [];
+                            const newCard: EditorFlashcardItem = {
+                              id: `card_${Date.now()}_${currentCards.length + 1}`,
+                              front: `Khái niệm / Câu hỏi ${currentCards.length + 1}`,
+                              back: `Câu trả lời / Giải thích chi tiết cho thẻ ${currentCards.length + 1}`
+                            };
+                            updateBlock(block.id, {
+                              flashcardData: {
+                                ...block.flashcardData!,
+                                cards: [...currentCards, newCard]
+                              }
+                            });
+                          }}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Thêm thẻ mới</span>
+                        </button>
+                      </div>
+
+                      {/* Title & Description Inputs */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            Tiêu đề bộ thẻ:
+                          </label>
+                          <input
+                            type="text"
+                            value={block.flashcardData.title || ''}
+                            onChange={(e) => updateBlock(block.id, {
+                              flashcardData: {
+                                ...block.flashcardData!,
+                                title: e.target.value
+                              }
+                            })}
+                            placeholder="Ví dụ: Ôn nhanh bằng flashcard"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 text-xs font-semibold text-slate-900 transition"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            Mô tả / Hướng dẫn:
+                          </label>
+                          <input
+                            type="text"
+                            value={block.flashcardData.description || ''}
+                            onChange={(e) => updateBlock(block.id, {
+                              flashcardData: {
+                                ...block.flashcardData!,
+                                description: e.target.value
+                              }
+                            })}
+                            placeholder="Ví dụ: Nhấp vào từng thẻ để lật và tự kiểm tra trước khi làm quiz."
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 text-xs text-slate-700 transition"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Cards List */}
+                      <div className="space-y-3 pt-1">
+                        <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                          <span>Danh sách thẻ trong bộ ({block.flashcardData.cards.length} thẻ):</span>
+                        </label>
+
+                        {block.flashcardData.cards.map((card, cardIdx) => (
+                          <div
+                            key={card.id || cardIdx}
+                            className="p-3.5 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/30 via-white to-purple-50/20 space-y-3 relative group"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-200">
+                                Thẻ #{cardIdx + 1}
+                              </span>
+
+                              {block.flashcardData!.cards.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const remaining = block.flashcardData!.cards.filter((_, idx) => idx !== cardIdx);
+                                    updateBlock(block.id, {
+                                      flashcardData: {
+                                        ...block.flashcardData!,
+                                        cards: remaining
+                                      }
+                                    });
+                                  }}
+                                  className="text-slate-400 hover:text-rose-600 transition cursor-pointer p-1"
+                                  title="Xóa thẻ này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {/* FRONT INPUT */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-bold text-indigo-800 flex items-center gap-1">
+                                  <span>Mặt trước (Khái niệm / Câu hỏi):</span>
+                                </label>
+                                <textarea
+                                  rows={3}
+                                  value={card.front}
+                                  onChange={(e) => {
+                                    const updatedCards = block.flashcardData!.cards.map((c, idx) => 
+                                      idx === cardIdx ? { ...c, front: e.target.value } : c
+                                    );
+                                    updateBlock(block.id, {
+                                      flashcardData: {
+                                        ...block.flashcardData!,
+                                        cards: updatedCards
+                                      }
+                                    });
+                                  }}
+                                  placeholder="Nhập câu hỏi hoặc khái niệm cần ghi nhớ..."
+                                  className="w-full p-2.5 rounded-xl border border-indigo-200 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 text-xs text-slate-900 resize-y"
+                                />
+                              </div>
+
+                              {/* BACK INPUT */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                                  <span>Mặt sau (Giải thích / Đáp án):</span>
+                                </label>
+                                <textarea
+                                  rows={3}
+                                  value={card.back}
+                                  onChange={(e) => {
+                                    const updatedCards = block.flashcardData!.cards.map((c, idx) => 
+                                      idx === cardIdx ? { ...c, back: e.target.value } : c
+                                    );
+                                    updateBlock(block.id, {
+                                      flashcardData: {
+                                        ...block.flashcardData!,
+                                        cards: updatedCards
+                                      }
+                                    });
+                                  }}
+                                  placeholder="Nhập câu trả lời hoặc định nghĩa chi tiết..."
+                                  className="w-full p-2.5 rounded-xl border border-emerald-200 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400 text-xs text-slate-900 resize-y"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               ))}
 
@@ -1697,6 +2374,24 @@ export const AdminLessonEditorPage: React.FC = () => {
                   >
                     <StickyNote className="w-3.5 h-3.5" />
                     <span>Khối Ghi Chú</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => addBlock('flashcard')}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200/80 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Khối Flashcard</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => addBlock('quiz')}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white border border-purple-200/80 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Khối Trắc Nghiệm</span>
                   </button>
 
                   <button

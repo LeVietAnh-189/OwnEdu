@@ -75,6 +75,7 @@ import { AdminAPI, DocumentAPI, UserAPI, VideoAPI, SettingsAPI, SystemSettingsDa
 import { AdminStats, Course, TokenUsageLog, DocumentItem, VideoItem, User, Chapter, Lesson, SystemServiceConfig } from '../types';
 import { AISettingsModal } from '../components/common/AISettingsModal';
 import { AdminSandboxConfigModal } from '../components/sandbox/AdminSandboxConfigModal';
+import { CloneLessonModal } from '../components/admin/CloneLessonModal';
 import { useUserStore } from '../store/userStore';
 
 interface MenuItem {
@@ -228,6 +229,7 @@ export const AdminPage: React.FC = () => {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [cloneLessonTarget, setCloneLessonTarget] = useState<{ chapterId: string; chapterTitle: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'published' | 'draft'>('ALL');
 
@@ -847,6 +849,46 @@ export const AdminPage: React.FC = () => {
       console.warn('Could not auto-save before navigating to lesson editor');
     }
     navigate(`/admin/courses/${selectedCourseForDocs.id}/chapters/${chapterId}/lessons/new`);
+  };
+
+  const handleOpenCloneLesson = (chapterId: string, chapterTitle: string) => {
+    setCloneLessonTarget({ chapterId, chapterTitle });
+  };
+
+  const handleAddClonedLessons = async (newLessons: Lesson[], andEditFirst: boolean = false) => {
+    if (!selectedCourseForDocs || !cloneLessonTarget) return;
+    const targetChapterId = cloneLessonTarget.chapterId;
+
+    const updatedChapters = editCourseChapters.map(ch => {
+      if (ch.id === targetChapterId) {
+        return {
+          ...ch,
+          lessons: [...(ch.lessons || []), ...newLessons]
+        };
+      }
+      return ch;
+    });
+
+    setEditCourseChapters(updatedChapters);
+
+    try {
+      await AdminAPI.updateCourse(selectedCourseForDocs.id, {
+        documentIds: editCourseDocIds,
+        videoIds: editCourseVideoIds,
+        chapters: updatedChapters
+      });
+      setCourses(prev => prev.map(c => c.id === selectedCourseForDocs.id ? { ...c, chapters: updatedChapters } : c));
+      setSelectedCourseForDocs(prev => prev ? { ...prev, chapters: updatedChapters } : null);
+    } catch (err: any) {
+      console.error('Lỗi khi lưu bài giảng mới:', err);
+      alert('Không thể lưu bài giảng vào server: ' + (err.message || ''));
+      return;
+    }
+
+    if (andEditFirst && newLessons.length > 0) {
+      const firstNewLesson = newLessons[0];
+      navigate(`/admin/courses/${selectedCourseForDocs.id}/chapters/${targetChapterId}/lessons/${firstNewLesson.id}`);
+    }
   };
 
   const handleOpenEditLesson = async (chapterId: string, chapterTitle: string, lesson: Lesson) => {
@@ -2111,48 +2153,6 @@ export const AdminPage: React.FC = () => {
                                     <span>Gói FREE</span>
                                   </span>
                                 )}
-
-                                {/* Status Badge: Draft vs Published */}
-                                {crs.status === 'draft' ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200" title="Khóa học đang ở dạng Bản nháp và chỉ hiển thị với Admin">
-                                    <FileEdit className="w-3 h-3 text-amber-600" />
-                                    <span>Bản nháp</span>
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200" title="Khóa học đã xuất bản công khai cho học viên">
-                                    <Globe className="w-3 h-3 text-emerald-600" />
-                                    <span>Đã xuất bản</span>
-                                  </span>
-                                )}
-
-                                {/* Sandbox Status Badge */}
-                                {crs.hasSandbox ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedCourseForSandbox(crs);
-                                    }}
-                                    className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition cursor-pointer"
-                                    title="Bấm để cấu hình Sandbox cho môn học này"
-                                  >
-                                    <Terminal className="w-3 h-3 text-indigo-600" />
-                                    <span>{crs.sandboxTitle || `${crs.sandboxLanguage?.toUpperCase() || 'CODE'} Sandbox`}</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedCourseForSandbox(crs);
-                                    }}
-                                    className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-200 transition cursor-pointer"
-                                    title="Thêm Sandbox thực hành cho môn học này"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                    <span>+ Sandbox</span>
-                                  </button>
-                                )}
                               </div>
 
                               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 group-hover:bg-orange-50 group-hover:text-orange-700 group-hover:border-orange-200 transition-colors">
@@ -2173,55 +2173,16 @@ export const AdminPage: React.FC = () => {
 
                           </div>
 
-                          {/* Card Footer: Status Action & Details */}
-                          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                          {/* Card Footer: Details */}
+                          <div className="pt-3 border-t border-slate-100 flex items-center justify-end text-xs">
                             <button
-                              type="button"
-                              onClick={() => handleToggleCourseStatus(crs.id, crs.status)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
-                                crs.status === 'draft'
-                                  ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-600 hover:text-white border border-emerald-200'
-                                  : 'text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200'
-                              }`}
-                              title={crs.status === 'draft' ? 'Xuất bản khóa học này cho học viên nhìn thấy' : 'Chuyển về bản nháp (học viên sẽ không thấy)'}
+                              onClick={() => handleOpenDocModal(crs)}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-orange-700 bg-orange-50 hover:bg-orange-600 hover:text-white transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
+                              title="Xem chi tiết và quản lý khóa học"
                             >
-                              {crs.status === 'draft' ? (
-                                <>
-                                  <Globe className="w-3.5 h-3.5" />
-                                  <span>Xuất bản</span>
-                                </>
-                              ) : (
-                                <>
-                                  <EyeOff className="w-3.5 h-3.5" />
-                                  <span>Về nháp</span>
-                                </>
-                              )}
+                              <span>Chi tiết</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
                             </button>
-
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCourseForSandbox(crs)}
-                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 ${
-                                  crs.hasSandbox
-                                    ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-600 hover:text-white border border-indigo-200'
-                                    : 'text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200'
-                                }`}
-                                title="Cấu hình Sandbox thực hành cho môn học này"
-                              >
-                                <Terminal className="w-3.5 h-3.5" />
-                                <span>{crs.hasSandbox ? 'Sandbox' : '+ Sandbox'}</span>
-                              </button>
-
-                              <button
-                                onClick={() => handleOpenDocModal(crs)}
-                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-orange-700 bg-orange-50 hover:bg-orange-600 hover:text-white transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
-                                title="Xem chi tiết và quản lý khóa học"
-                              >
-                                <span>Chi tiết</span>
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
                           </div>
                         </div>
                       );
@@ -3773,6 +3734,16 @@ export const AdminPage: React.FC = () => {
 
                               <button
                                 type="button"
+                                onClick={() => handleOpenCloneLesson(chapter.id, chapter.title)}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-600 hover:text-white transition flex items-center gap-1 cursor-pointer"
+                                title="Nạp file HTML từ máy tính để tự động chuyển hóa thành bài giảng cho chương này"
+                              >
+                                <UploadCloud className="w-3.5 h-3.5" />
+                                <span>Clone bài giảng</span>
+                              </button>
+
+                              <button
+                                type="button"
                                 onClick={() => handleDeleteChapter(chapter.id)}
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                                 title="Xóa toàn bộ chương này"
@@ -3785,7 +3756,7 @@ export const AdminPage: React.FC = () => {
                           {/* Lessons inside chapter */}
                           {(!chapter.lessons || chapter.lessons.length === 0) ? (
                             <div className="py-3 px-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-slate-400 text-xs">
-                              Chưa có bài học trong chương này. Nhấp <strong className="text-orange-600 cursor-pointer" onClick={() => handleOpenAddLesson(chapter.id, chapter.title)}>+ Thêm bài học</strong> để bắt đầu soạn bài giảng.
+                              Chưa có bài học trong chương này. Nhấp <strong className="text-orange-600 cursor-pointer" onClick={() => handleOpenAddLesson(chapter.id, chapter.title)}>+ Thêm bài học</strong> hoặc <strong className="text-indigo-600 cursor-pointer" onClick={() => handleOpenCloneLesson(chapter.id, chapter.title)}>Clone bài giảng</strong> để bắt đầu soạn bài.
                             </div>
                           ) : (
                             <div className="space-y-2">
@@ -3829,7 +3800,7 @@ export const AdminPage: React.FC = () => {
                                       className="px-3 py-1.5 rounded-lg text-xs font-bold text-orange-700 bg-orange-50 group-hover:bg-orange-600 group-hover:text-white transition flex items-center gap-1 cursor-pointer"
                                     >
                                       <Edit3 className="w-3.5 h-3.5" />
-                                      <span>Soạn bài / Xem trước</span>
+                                      <span>Soạn bài</span>
                                     </button>
 
                                     <button
@@ -4506,6 +4477,19 @@ export const AdminPage: React.FC = () => {
           setSelectedCourseForSandbox(null);
         }}
       />
+
+      {/* Clone Lesson from HTML Modal */}
+      {cloneLessonTarget && selectedCourseForDocs && (
+        <CloneLessonModal
+          isOpen={!!cloneLessonTarget}
+          chapterTitle={cloneLessonTarget.chapterTitle}
+          currentLessonCount={
+            editCourseChapters.find(ch => ch.id === cloneLessonTarget.chapterId)?.lessons?.length || 0
+          }
+          onClose={() => setCloneLessonTarget(null)}
+          onAddLessons={handleAddClonedLessons}
+        />
+      )}
     </div>
   );
 };

@@ -94,6 +94,28 @@ export const ExamAPI = {
   },
 };
 
+export interface AIStructureLessonResponse {
+  title: string;
+  markdown: string;
+  stats: {
+    totalHeadings: number;
+    totalParagraphs: number;
+    totalCallouts: number;
+    totalTables: number;
+    totalCodeBlocks: number;
+  };
+  usedAI: boolean;
+  provider?: string;
+  model?: string;
+}
+
+export const AIAPI = {
+  structureLesson: async (payload: { htmlContent: string; lessonTitle?: string }): Promise<AIStructureLessonResponse> => {
+    const res = await api.post<{ success: boolean; data: AIStructureLessonResponse }>('/ai/structure-lesson', payload);
+    return res.data.data;
+  },
+};
+
 export const AttemptAPI = {
   get: async (attemptId: string) => {
     const res = await api.get<{

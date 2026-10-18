@@ -6,6 +6,7 @@ import path from 'path';
 import { db } from '../db/hybridStore.js';
 import { parsePdfBuffer, parseDocxBuffer, parseMarkdownBuffer, chunkText } from '../services/documentParser.js';
 import { generateExamJob } from '../ai/examGenerator.js';
+import { structureLessonWithAI } from '../ai/lessonStructureAI.js';
 import { gradeExamAttempt, overrideTeacherGrade } from '../services/gradingService.js';
 import { DocumentItem, ExamAttempt, PaymentPlanId, PaymentOrder } from '../types.js';
 import { VideoService, reloadR2Config } from '../services/videoService.js';
@@ -767,6 +768,24 @@ apiRouter.post('/settings/test-ai', async (req, res) => {
   } catch (err: any) {
     const latencyMs = Date.now() - startTime;
     return errorResponse(res, 'E-AI-CONN-ERROR', `Không thể kết nối đến máy chủ AI (${latencyMs}ms): ${err.message}`, 500);
+  }
+});
+
+/**
+ * AI quan sát và phân tách các khối bài giảng chuẩn OwnEdu từ HTML hoặc văn bản
+ */
+apiRouter.post('/ai/structure-lesson', async (req, res) => {
+  const { htmlContent, lessonTitle } = req.body;
+
+  if (!htmlContent || typeof htmlContent !== 'string') {
+    return errorResponse(res, 'E-INVALID-PAYLOAD', 'Vui lòng cung cấp nội dung HTML hoặc văn bản cần phân tách.', 400);
+  }
+
+  try {
+    const result = await structureLessonWithAI(htmlContent, { lessonTitle });
+    return successResponse(res, result);
+  } catch (err: any) {
+    return errorResponse(res, 'E-AI-STRUCTURE-FAILED', err.message || 'Không thể phân tách khối bằng AI.', 500);
   }
 });
 
