@@ -15,7 +15,10 @@ import {
   SystemServiceConfig,
   PaymentOrder, 
   PaymentPlan, 
-  PaymentPlanId 
+  PaymentPlanId,
+  LeaderboardResponse,
+  UserRankProfile,
+  RankBadge
 } from '../types';
 
 const api = axios.create({
@@ -469,6 +472,55 @@ export const PaymentAPI = {
     const res = await api.post<{ success: boolean; data: { message: string; order: PaymentOrder } }>(`/payment/cancel/${orderCode}`);
     return res.data.data;
   },
+};
+
+export const RankAPI = {
+  getLeaderboard: async (timeframe: 'weekly' | 'all' = 'weekly') => {
+    const res = await api.get<{ success: boolean; data: LeaderboardResponse }>(`/rank/leaderboard?timeframe=${timeframe}`);
+    return res.data.data;
+  },
+  getProgress: async (courseId: string) => {
+    const res = await api.get<{
+      success: boolean;
+      data: {
+        courseId: string;
+        completedLessonIds: string[];
+        totalCompleted: number;
+        rankBadge: RankBadge;
+      };
+    }>(`/rank/progress/${courseId}`);
+    return res.data.data;
+  },
+  toggleLesson: async (courseId: string, lessonId: string) => {
+    const res = await api.post<{
+      success: boolean;
+      data: {
+        completed: boolean;
+        completedLessonIds: string[];
+        totalCompleted: number;
+        rankBadge: RankBadge;
+        message: string;
+      };
+    }>('/rank/toggle-lesson', { courseId, lessonId });
+    return res.data.data;
+  },
+  getMyProfile: async () => {
+    const res = await api.get<{
+      success: boolean;
+      data: {
+        userId: string;
+        fullName: string;
+        email: string;
+        role: UserRole;
+        tier: UserTier;
+        avatarChar: string;
+        totalCompletedLessons: number;
+        currentStreakDays: number;
+        rankBadge: RankBadge;
+      };
+    }>('/rank/my-profile');
+    return res.data.data;
+  }
 };
 
 export default api;

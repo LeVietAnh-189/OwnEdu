@@ -14,13 +14,14 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  X
+  X,
+  Trophy
 } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { ProUpgradeModal } from '../payment/ProUpgradeModal';
 
-export type UserTabKey = 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'profile';
+export type UserTabKey = 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'leaderboard' | 'profile';
 
 interface MenuItem {
   id: UserTabKey;
@@ -106,6 +107,13 @@ export const UserLayout: React.FC = () => {
       description: 'Ngân hàng câu hỏi & làm bài thi',
       icon: Layers,
       path: '/user?tab=my-exams',
+    },
+    {
+      id: 'leaderboard',
+      label: 'Bảng Xếp Hạng',
+      description: 'Đua top bài học & vinh danh',
+      icon: Trophy,
+      path: '/user?tab=leaderboard',
     },
     {
       id: 'profile',
