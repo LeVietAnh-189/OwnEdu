@@ -51,13 +51,14 @@ import {
   ChevronRight,
   Terminal
 } from 'lucide-react';
-import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, SystemServiceAPI, PaymentAPI } from '../services/api';
-import { Course, DocumentItem, Exam, VideoItem, PaymentOrder, Chapter, Lesson } from '../types';
+import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, SystemServiceAPI, PaymentAPI, RankAPI } from '../services/api';
+import { Course, DocumentItem, Exam, VideoItem, PaymentOrder, Chapter, Lesson, RankBadge } from '../types';
 import { useUserStore } from '../store/userStore';
 import { useLayoutStore } from '../store/layoutStore';
 import { ProUpgradeModal } from '../components/payment/ProUpgradeModal';
 import { HypertextRenderer } from '../components/HypertextRenderer';
 import { CourseSandbox } from '../components/sandbox/CourseSandbox';
+import { LeaderboardTab } from '../components/rank/LeaderboardTab';
 
 export const USER_COURSE_TOPICS = [
   { id: 'ALL', name: 'Tất cả chủ đề', icon: Layers },
@@ -72,7 +73,7 @@ export const UserPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser, fetchCurrentUser } = useUserStore();
 
-  const activeTabParam = searchParams.get('tab') as 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'profile' | null;
+  const activeTabParam = searchParams.get('tab') as 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'leaderboard' | 'profile' | null;
   const activeTab = activeTabParam || 'courses';
 
   const setActiveTab = (tab: string) => {
@@ -150,8 +151,10 @@ export const UserPage: React.FC = () => {
       return [];
     }
   });
+  const [userRankBadge, setUserRankBadge] = useState<RankBadge | null>(null);
+  const [rankToast, setRankToast] = useState<{ message: string; badge?: RankBadge } | null>(null);
 
-  const toggleCompleteLesson = (lessonId: string) => {
+  const toggleCompleteLesson = async (lessonId: string) => {
     setCompletedLessonIds(prev => {
       const next = prev.includes(lessonId) ? prev.filter(id => id !== lessonId) : [...prev, lessonId];
       try {
@@ -159,6 +162,22 @@ export const UserPage: React.FC = () => {
       } catch {}
       return next;
     });
+
+    try {
+      const res = await RankAPI.toggleLesson(activeCourse?.id || '', lessonId);
+      if (res) {
+        setUserRankBadge(res.rankBadge);
+        if (res.completed) {
+          setRankToast({
+            message: `🎉 Đã hoàn thành bài học! Cấp bậc: ${res.rankBadge.icon} ${res.rankBadge.title} (${res.totalCompleted} bài)`,
+            badge: res.rankBadge
+          });
+          setTimeout(() => setRankToast(null), 4000);
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi cập nhật tiến độ bài học:', err);
+    }
   };
 
   const toggleExpandChapter = (chapterId: string) => {
@@ -189,6 +208,23 @@ export const UserPage: React.FC = () => {
     ? (courses.find(c => c.id === courseIdParam) || selectedCourseForDetail)
     : selectedCourseForDetail;
   const activeCourse = rawActiveCourse && rawActiveCourse.status !== 'draft' ? rawActiveCourse : null;
+
+  // Sync lesson progress with backend when activeCourse changes
+  useEffect(() => {
+    if (activeCourse?.id) {
+      RankAPI.getProgress(activeCourse.id)
+        .then(res => {
+          if (res?.completedLessonIds) {
+            setCompletedLessonIds(res.completedLessonIds);
+            setUserRankBadge(res.rankBadge);
+            try {
+              localStorage.setItem('ownedu_completed_lessons', JSON.stringify(res.completedLessonIds));
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [activeCourse?.id]);
 
   useEffect(() => {
     if (activeCourse) {
@@ -2203,6 +2239,29 @@ export const UserPage: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 5: BẢNG XẾP HẠNG VINH DANH (LEADERBOARD) */}
+      {/* ======================================================== */}
+      {activeTab === 'leaderboard' && (
+        <LeaderboardTab />
+      )}
+
+      {/* Rank Milestone Toast Notification */}
+      {rankToast && (
+        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-slate-900 text-white shadow-2xl flex items-center gap-3 border border-slate-700 max-w-md animate-fade-in">
+          <span className="text-2xl">{rankToast.badge?.icon || '🎉'}</span>
+          <div className="text-xs">
+            <p className="font-bold text-slate-100">{rankToast.message}</p>
+          </div>
+          <button
+            onClick={() => setRankToast(null)}
+            className="ml-auto text-slate-400 hover:text-white p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
