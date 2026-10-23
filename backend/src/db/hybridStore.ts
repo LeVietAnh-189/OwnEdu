@@ -22,7 +22,11 @@ import {
   RankBadge,
   RankTier,
   UserRankProfile,
-  LeaderboardResponse
+  LeaderboardResponse,
+  LicenseKeyItem,
+  LicenseDeviceBinding,
+  LicenseChatTicket,
+  LicenseChatMessage
 } from '../types.js';
 
 export interface SystemSettings {
@@ -139,9 +143,20 @@ interface DatabaseSchema {
   paymentOrders?: PaymentOrder[];
   activeUserId?: string;
   completedLessons?: UserCompletedLesson[];
+  licenseKeys?: LicenseKeyItem[];
+  licenseChatTickets?: LicenseChatTicket[];
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const resolveDataDir = (): string => {
+  if (fs.existsSync(path.resolve(process.cwd(), 'data'))) {
+    return path.resolve(process.cwd(), 'data');
+  }
+  if (fs.existsSync(path.resolve(process.cwd(), '../data'))) {
+    return path.resolve(process.cwd(), '../data');
+  }
+  return path.resolve(process.cwd(), 'data');
+};
+const DATA_DIR = resolveDataDir();
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
 
 function cleanMojibake(str: string): string {
@@ -462,9 +477,294 @@ export class HybridStore {
     const newExpiry = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
     user.proExpiresAt = newExpiry.toISOString();
 
+    // Tự động cấp 2 License Keys cho người dùng PRO
+    this.generateUserLicenseKeys(user.id, user.proExpiresAt);
+
     this.persist();
     return user;
   }
+
+  // --- License Keys & Device DRM Management ---
+  private generateRandomLicenseCode(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const randPart = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return `OE-PRO-${randPart(4)}-${randPart(4)}`;
+  }
+
+  public getLicenseKeys(userId?: string): LicenseKeyItem[] {
+    if (!this.data.licenseKeys) {
+      this.data.licenseKeys = [];
+    }
+    if (userId) {
+      return this.data.licenseKeys.filter(k => k.userId === userId);
+    }
+    return this.data.licenseKeys;
+  }
+
+  public getLicenseKeyByCode(key: string): LicenseKeyItem | undefined {
+    if (!this.data.licenseKeys) this.data.licenseKeys = [];
+    const clean = (key || '').trim().toUpperCase();
+    return this.data.licenseKeys.find(k => k.key.toUpperCase() === clean);
+  }
+
+  public generateUserLicenseKeys(userId: string, expiresAt?: string, orderCode?: number): LicenseKeyItem[] {
+    if (!this.data.licenseKeys) this.data.licenseKeys = [];
+    const user = this.data.users.find(u => u.id === userId);
+    if (!user) return [];
+
+    const finalExpiry = expiresAt || user.proExpiresAt || new Date(Date.now() + 365 * 86400000).toISOString();
+    const existing = this.data.licenseKeys.filter(k => k.userId === userId);
+
+    // Cập nhật hạn dùng cho các key đã có nếu user gia hạn
+    existing.forEach(k => {
+      k.expiresAt = finalExpiry;
+      k.status = 'ACTIVE';
+      if (orderCode) k.orderCode = orderCode;
+    });
+
+    const neededSlots = [1, 2].filter(slot => !existing.some(k => k.slotIndex === slot));
+    const now = new Date().toISOString();
+
+    for (const slot of neededSlots) {
+      let code = this.generateRandomLicenseCode();
+      while (this.data.licenseKeys.some(k => k.key === code)) {
+        code = this.generateRandomLicenseCode();
+      }
+
+      const newKey: LicenseKeyItem = {
+        id: `lic_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        key: code,
+        userId: user.id,
+        userEmail: user.email,
+        orderCode,
+        slotIndex: slot as 1 | 2,
+        status: 'ACTIVE',
+        boundDevice: null,
+        expiresAt: finalExpiry,
+        createdAt: now,
+        updatedAt: now
+      };
+      this.data.licenseKeys.unshift(newKey);
+      existing.push(newKey);
+    }
+
+    this.persist();
+    return existing.sort((a, b) => a.slotIndex - b.slotIndex);
+  }
+
+  public activateLicenseKey(params: {
+    userId: string;
+    key: string;
+    deviceId: string;
+    deviceFingerprint: string;
+    deviceName: string;
+    ip: string;
+  }): { success: boolean; message: string; license?: LicenseKeyItem } {
+    if (!this.data.licenseKeys) this.data.licenseKeys = [];
+    const license = this.getLicenseKeyByCode(params.key);
+
+    if (!license) {
+      return { success: false, message: 'Mã License Key không tồn tại trên hệ thống.' };
+    }
+
+    if (license.userId !== params.userId) {
+      return { success: false, message: 'Mã License Key này thuộc về tài khoản học viên khác.' };
+    }
+
+    if (license.status !== 'ACTIVE') {
+      return { success: false, message: 'Mã License Key này đã bị thu hồi hoặc hết hạn.' };
+    }
+
+    const now = new Date().toISOString();
+
+    // Trường hợp 1: Key đã gắn vào một thiết bị
+    if (license.boundDevice) {
+      // Nếu chính là thiết bị này -> Cho phép cập nhật IP & Last Active
+      if (license.boundDevice.deviceId === params.deviceId) {
+        license.boundDevice.lastIp = params.ip || license.boundDevice.lastIp;
+        license.boundDevice.lastActiveAt = now;
+        license.boundDevice.deviceName = params.deviceName || license.boundDevice.deviceName;
+        license.updatedAt = now;
+        this.persist();
+        return { success: true, message: 'Thiết bị đã được xác thực thành công.', license };
+      }
+
+      // Nếu là thiết bị khác -> Báo lỗi xung đột (Conflict)
+      return {
+        success: false,
+        message: `Mã key này đang được liên kết với thiết bị "${license.boundDevice.deviceName}". Mỗi License Key chỉ được sử dụng trên 1 máy tính.`
+      };
+    }
+
+    // Trường hợp 2: Key đang trống -> Gắn vào thiết bị hiện tại
+    license.boundDevice = {
+      deviceId: params.deviceId,
+      deviceFingerprint: params.deviceFingerprint,
+      deviceName: params.deviceName || 'Thiết bị người dùng',
+      activatedAt: now,
+      lastIp: params.ip || '127.0.0.1',
+      lastActiveAt: now
+    };
+    license.updatedAt = now;
+    this.persist();
+
+    return {
+      success: true,
+      message: `Kích hoạt thành công trên ${license.boundDevice.deviceName}! Bạn đã mở khóa toàn quyền học tập trên máy tính này.`,
+      license
+    };
+  }
+
+  public verifyDeviceAccess(userId: string, deviceId: string, ip?: string): {
+    isAuthorized: boolean;
+    reason?: string;
+    license?: LicenseKeyItem;
+  } {
+    const user = this.data.users.find(u => u.id === userId);
+    if (!user) return { isAuthorized: false, reason: 'USER_NOT_FOUND' };
+
+    // Tài khoản ADMIN luôn được quyền truy cập quản trị
+    if (user.role === 'ADMIN') {
+      return { isAuthorized: true };
+    }
+
+    // Nếu tài khoản không phải PRO thì không có quyền xem tài nguyên PRO
+    if (user.tier !== 'PRO') {
+      return { isAuthorized: false, reason: 'NOT_PRO_USER' };
+    }
+
+    const userKeys = this.getLicenseKeys(userId);
+    // Nếu chưa có key nào được cấp (e.g. tài khoản PRO cũ chưa sinh key), tự động cấp
+    if (userKeys.length === 0) {
+      this.generateUserLicenseKeys(userId, user.proExpiresAt);
+    }
+
+    const boundKey = this.getLicenseKeys(userId).find(
+      k => k.status === 'ACTIVE' && k.boundDevice && k.boundDevice.deviceId === deviceId
+    );
+
+    if (boundKey && boundKey.boundDevice) {
+      // Cập nhật vết IP và thời gian hoạt động mới nhất
+      boundKey.boundDevice.lastActiveAt = new Date().toISOString();
+      if (ip) boundKey.boundDevice.lastIp = ip;
+      this.persist();
+      return { isAuthorized: true, license: boundKey };
+    }
+
+    return { isAuthorized: false, reason: 'DEVICE_NOT_ACTIVATED' };
+  }
+
+  public adminResetLicenseSlot(keyIdOrCode: string): { success: boolean; message: string; license?: LicenseKeyItem } {
+    if (!this.data.licenseKeys) this.data.licenseKeys = [];
+    const license = this.data.licenseKeys.find(
+      k => k.id === keyIdOrCode || k.key.toUpperCase() === keyIdOrCode.toUpperCase()
+    );
+
+    if (!license) {
+      return { success: false, message: 'Không tìm thấy License Key cần reset.' };
+    }
+
+    const oldDeviceName = license.boundDevice?.deviceName || 'thiết bị cũ';
+    license.boundDevice = null;
+    license.updatedAt = new Date().toISOString();
+
+    // Thêm tin nhắn hệ thống vào ticket chat của user nếu có
+    const ticket = this.getChatTicketByUserId(license.userId);
+    if (ticket) {
+      ticket.messages.push({
+        id: `msg_sys_${Date.now()}`,
+        senderId: 'sys_admin',
+        senderRole: 'ADMIN',
+        senderName: 'Hệ Thống OwnEdu (Admin)',
+        message: `Admin đã hủy liên kết thiết bị (${oldDeviceName}) cho Slot ${license.slotIndex} [${license.key}]. Bạn có thể kích hoạt lại trên thiết bị mới ngay bây giờ!`,
+        timestamp: new Date().toISOString()
+      });
+      ticket.status = 'RESOLVED';
+      ticket.updatedAt = new Date().toISOString();
+    }
+
+    this.persist();
+    return {
+      success: true,
+      message: `Đã hủy liên kết thiết bị thành công cho Slot ${license.slotIndex} (${license.key}). Mã hiện đã sẵn sàng cho máy mới.`,
+      license
+    };
+  }
+
+  // --- License Support Live Chat Tickets ---
+  public getChatTickets(userId?: string): LicenseChatTicket[] {
+    if (!this.data.licenseChatTickets) {
+      this.data.licenseChatTickets = [];
+    }
+    if (userId) {
+      return this.data.licenseChatTickets.filter(t => t.userId === userId);
+    }
+    return this.data.licenseChatTickets;
+  }
+
+  public getChatTicketByUserId(userId: string): LicenseChatTicket | undefined {
+    return this.getChatTickets().find(t => t.userId === userId);
+  }
+
+  public sendChatMessage(params: {
+    userId: string;
+    senderId: string;
+    senderRole: 'USER' | 'ADMIN';
+    senderName: string;
+    message: string;
+    targetKeyId?: string;
+    deviceInfoSnapshot?: string;
+  }): LicenseChatTicket {
+    if (!this.data.licenseChatTickets) this.data.licenseChatTickets = [];
+    const user = this.data.users.find(u => u.id === params.userId);
+    let ticket = this.getChatTicketByUserId(params.userId);
+    const now = new Date().toISOString();
+
+    if (!ticket) {
+      ticket = {
+        id: `tkt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        userId: params.userId,
+        userName: user?.fullName || 'Học viên',
+        userEmail: user?.email || '',
+        targetKeyId: params.targetKeyId,
+        status: 'OPEN',
+        messages: [],
+        createdAt: now,
+        updatedAt: now
+      };
+      this.data.licenseChatTickets.unshift(ticket);
+    }
+
+    ticket.messages.push({
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      senderId: params.senderId,
+      senderRole: params.senderRole,
+      senderName: params.senderName,
+      message: params.message,
+      timestamp: now,
+      deviceInfoSnapshot: params.deviceInfoSnapshot
+    });
+
+    if (params.senderRole === 'USER') {
+      ticket.status = 'OPEN';
+    }
+    ticket.updatedAt = now;
+    if (params.targetKeyId) ticket.targetKeyId = params.targetKeyId;
+
+    this.persist();
+    return ticket;
+  }
+
+  public resolveChatTicket(ticketId: string): boolean {
+    if (!this.data.licenseChatTickets) return false;
+    const t = this.data.licenseChatTickets.find(item => item.id === ticketId);
+    if (!t) return false;
+    t.status = 'RESOLVED';
+    t.updatedAt = new Date().toISOString();
+    this.persist();
+    return true;
+  }
+
 
 
   // --- Documents ---

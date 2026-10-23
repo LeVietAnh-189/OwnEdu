@@ -69,17 +69,22 @@ import {
   Wrench,
   Settings2,
   ShieldAlert,
-  Terminal
+  Terminal,
+  MessageSquare,
+  Laptop,
+  KeyRound,
+  Send,
+  RotateCcw
 } from 'lucide-react';
-import { AdminAPI, DocumentAPI, UserAPI, VideoAPI, SettingsAPI, SystemSettingsData, SystemServiceAPI } from '../services/api';
-import { AdminStats, Course, TokenUsageLog, DocumentItem, VideoItem, User, Chapter, Lesson, SystemServiceConfig } from '../types';
+import { AdminAPI, DocumentAPI, UserAPI, VideoAPI, SettingsAPI, SystemSettingsData, SystemServiceAPI, LicenseAPI } from '../services/api';
+import { AdminStats, Course, TokenUsageLog, DocumentItem, VideoItem, User, Chapter, Lesson, SystemServiceConfig, LicenseKeyItem, LicenseChatTicket } from '../types';
 import { AISettingsModal } from '../components/common/AISettingsModal';
 import { AdminSandboxConfigModal } from '../components/sandbox/AdminSandboxConfigModal';
 import { CloneLessonModal } from '../components/admin/CloneLessonModal';
 import { useUserStore } from '../store/userStore';
 
 interface MenuItem {
-  id: 'courses' | 'users' | 'system' | 'config';
+  id: 'courses' | 'users' | 'licenses' | 'system' | 'config';
   label: string;
   description: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -214,8 +219,8 @@ export const AdminPage: React.FC = () => {
     }
   };
   
-  // Navigation tabs: 'courses' | 'users' | 'system' | 'config'
-  const [activeTab, setActiveTab] = useState<'courses' | 'users' | 'system' | 'config'>('courses');
+  // Navigation tabs: 'courses' | 'users' | 'licenses' | 'system' | 'config'
+  const [activeTab, setActiveTab] = useState<'courses' | 'users' | 'licenses' | 'system' | 'config'>('courses');
   
   // Topic filter for Courses tab
   const [selectedTopic, setSelectedTopic] = useState<string>('Lập trình');
@@ -444,10 +449,20 @@ export const AdminPage: React.FC = () => {
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
   const [saveConfigMsg, setSaveConfigMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // License DRM & Live Support Chat State
+  const [adminLicenses, setAdminLicenses] = useState<LicenseKeyItem[]>([]);
+  const [adminTickets, setAdminTickets] = useState<LicenseChatTicket[]>([]);
+  const [selectedAdminTicket, setSelectedAdminTicket] = useState<LicenseChatTicket | null>(null);
+  const [adminReplyText, setAdminReplyText] = useState<string>('');
+  const [isSendingAdminReply, setIsSendingAdminReply] = useState<boolean>(false);
+  const [licenseSearchText, setLicenseSearchText] = useState<string>('');
+  const [licenseSlotFilter, setLicenseSlotFilter] = useState<'ALL' | 'BOUND' | 'UNBOUND'>('ALL');
+  const [licenseToast, setLicenseToast] = useState<string>('');
+
   const loadAllData = async () => {
     setIsLoading(true);
     try {
-      const [statsRes, coursesRes, tokensRes, docsRes, usersRes, videosRes, settingsRes, servicesRes] = await Promise.all([
+      const [statsRes, coursesRes, tokensRes, docsRes, usersRes, videosRes, settingsRes, servicesRes, licensesRes, ticketsRes] = await Promise.all([
         AdminAPI.getStats().catch(() => null),
         AdminAPI.getCourses().catch(() => []),
         AdminAPI.getTokens().catch(() => ({ logs: [], summary: { totalTokens: 0, estimatedCostUsd: 0, callCount: 0 } })),
@@ -455,8 +470,18 @@ export const AdminPage: React.FC = () => {
         UserAPI.list().catch(() => []),
         VideoAPI.list().catch(() => []),
         SettingsAPI.get().catch(() => null),
-        SystemServiceAPI.list().catch(() => [])
+        SystemServiceAPI.list().catch(() => []),
+        LicenseAPI.getAllLicensesAdmin().catch(() => []),
+        LicenseAPI.getChatTickets().catch(() => [])
       ]);
+
+      if (licensesRes) setAdminLicenses(licensesRes);
+      if (ticketsRes) {
+        setAdminTickets(ticketsRes);
+        if (ticketsRes.length > 0) {
+          setSelectedAdminTicket(prev => prev ? (ticketsRes.find(t => t.id === prev.id) || ticketsRes[0]) : ticketsRes[0]);
+        }
+      }
 
       if (servicesRes && servicesRes.length > 0) {
         setServices(servicesRes.map((s: SystemServiceConfig) => ({
@@ -1234,6 +1259,14 @@ export const AdminPage: React.FC = () => {
       description: 'Phân quyền Admin & Học viên',
       icon: Users, 
       count: users.length || stats?.usersCount || 4 
+    },
+    { 
+      id: 'licenses', 
+      label: 'Bản quyền & Thiết bị', 
+      description: 'Khóa 2 máy & Hỗ trợ đổi key',
+      icon: ShieldCheck, 
+      count: adminLicenses.length,
+      badge: adminTickets.some(t => t.status === 'OPEN') ? 'Yêu cầu mới' : undefined
     },
     { 
       id: 'system', 
@@ -2729,8 +2762,424 @@ export const AdminPage: React.FC = () => {
           )}
 
           {/* ======================================================== */}
+          {/* TAB: BẢN QUYỀN & THIẾT BỊ (DRM & LIVE CHAT SUPPORT)       */}
           {/* ======================================================== */}
-          {/* TAB 3: QUẢN LÝ HỆ THỐNG */}
+          {activeTab === 'licenses' && (
+            <div className="space-y-6 w-full">
+              {/* Toast message */}
+              {licenseToast && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-2xl flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span className="font-semibold">{licenseToast}</span>
+                </div>
+              )}
+
+              {/* Stats Overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">Tổng License Keys</span>
+                    <h4 className="text-2xl font-black text-slate-900 mt-1">{adminLicenses.length}</h4>
+                    <span className="text-[11px] text-slate-400">2 slots / học viên PRO</span>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <KeyRound className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">Máy Đang Hoạt Động</span>
+                    <h4 className="text-2xl font-black text-emerald-600 mt-1">
+                      {adminLicenses.filter(l => Boolean(l.boundDevice)).length}
+                    </h4>
+                    <span className="text-[11px] text-slate-400">Đã khóa vân tay thiết bị</span>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <Laptop className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">Slot Còn Trống</span>
+                    <h4 className="text-2xl font-black text-amber-600 mt-1">
+                      {adminLicenses.filter(l => !l.boundDevice).length}
+                    </h4>
+                    <span className="text-[11px] text-slate-400">Sẵn sàng kích hoạt</span>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">Yêu Cầu Đổi Máy</span>
+                    <h4 className="text-2xl font-black text-rose-600 mt-1">
+                      {adminTickets.filter(t => t.status === 'OPEN').length}
+                    </h4>
+                    <span className="text-[11px] text-slate-400">Học viên chờ hỗ trợ</span>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                    <MessageSquare className="w-6 h-6" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Split Grid: Table & Live Support Drawer */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left 7 cols: License Keys Table */}
+                <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col overflow-hidden">
+                  <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50/50">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">Danh Sách License Keys & Thiết Bị</h3>
+                      <p className="text-xs text-slate-500">Quản trị các khóa học viên đã kích hoạt trên máy tính</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          placeholder="Tìm học viên, key..."
+                          value={licenseSearchText}
+                          onChange={(e) => setLicenseSearchText(e.target.value)}
+                          className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 w-44"
+                        />
+                      </div>
+                      <select
+                        value={licenseSlotFilter}
+                        onChange={(e) => setLicenseSlotFilter(e.target.value as any)}
+                        className="px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none text-slate-700 font-medium"
+                      >
+                        <option value="ALL">Tất cả slot</option>
+                        <option value="BOUND">Đã gắn máy</option>
+                        <option value="UNBOUND">Còn trống</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await LicenseAPI.testTogglePro({ targetTier: 'PRO', forceRegenerate: true });
+                            const updatedLicenses = await LicenseAPI.getAllLicensesAdmin();
+                            setAdminLicenses(updatedLicenses);
+                            setLicenseToast(`🎉 Đã cấp 2 key mới: Slot 1 (${res.keys[0]?.key}), Slot 2 (${res.keys[1]?.key})`);
+                            setTimeout(() => setLicenseToast(''), 6000);
+                          } catch (err: any) {
+                            alert(err?.response?.data?.error?.message || 'Lỗi khi test sinh key.');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
+                        title="Bấm để nâng cấp PRO cho tài khoản hiện tại và sinh ngay 2 License Key"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+                        <span>⚡ Test Nâng PRO (2 Key)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await LicenseAPI.testTogglePro({ targetTier: 'FREE' });
+                            const updatedLicenses = await LicenseAPI.getAllLicensesAdmin();
+                            setAdminLicenses(updatedLicenses);
+                            setLicenseToast('🔄 Đã reset tài khoản về Gói Miễn Phí (Free).');
+                            setTimeout(() => setLicenseToast(''), 3000);
+                          } catch (err: any) {
+                            alert(err?.response?.data?.error?.message || 'Lỗi khi reset.');
+                          }
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                        title="Reset về Free để test lại"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Reset Free</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto flex-1">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100">
+                        <tr>
+                          <th className="py-3 px-4">Học viên</th>
+                          <th className="py-3 px-4">Slot & Key</th>
+                          <th className="py-3 px-4">Thiết bị liên kết</th>
+                          <th className="py-3 px-4">IP / Ngày gắn</th>
+                          <th className="py-3 px-4 text-right">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {adminLicenses
+                          .filter((lic) => {
+                            const q = licenseSearchText.toLowerCase().trim();
+                            const matchesSearch = !q ||
+                              lic.key.toLowerCase().includes(q) ||
+                              lic.userEmail.toLowerCase().includes(q) ||
+                              (lic.boundDevice?.deviceName || '').toLowerCase().includes(q);
+
+                            if (!matchesSearch) return false;
+                            if (licenseSlotFilter === 'BOUND') return Boolean(lic.boundDevice);
+                            if (licenseSlotFilter === 'UNBOUND') return !lic.boundDevice;
+                            return true;
+                          })
+                          .map((lic) => {
+                            const userObj = users.find(u => u.id === lic.userId);
+
+                            return (
+                              <tr key={lic.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-3.5 px-4">
+                                  <div className="font-bold text-slate-800">{userObj?.fullName || 'Học viên PRO'}</div>
+                                  <div className="text-[11px] text-slate-400 font-mono">{lic.userEmail}</div>
+                                </td>
+
+                                <td className="py-3.5 px-4 font-mono">
+                                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                    <span className="text-[10px] font-sans font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                                      Slot {lic.slotIndex}
+                                    </span>
+                                    <span>{lic.key}</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">
+                                    Hạn: {new Date(lic.expiresAt).toLocaleDateString('vi-VN')}
+                                  </div>
+                                </td>
+
+                                <td className="py-3.5 px-4">
+                                  {lic.boundDevice ? (
+                                    <div className="flex items-center gap-1.5 text-slate-700">
+                                      <Laptop className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                                      <span className="font-medium truncate max-w-[140px]" title={lic.boundDevice.deviceName}>
+                                        {lic.boundDevice.deviceName}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                      Chưa gắn máy nào
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td className="py-3.5 px-4 text-[11px] text-slate-500 font-mono">
+                                  {lic.boundDevice ? (
+                                    <>
+                                      <div className="text-slate-700 font-semibold">{lic.boundDevice.lastIp}</div>
+                                      <div className="text-[10px] text-slate-400">
+                                        {new Date(lic.boundDevice.activatedAt).toLocaleDateString('vi-VN')}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400">-</span>
+                                  )}
+                                </td>
+
+                                <td className="py-3.5 px-4 text-right">
+                                  {lic.boundDevice ? (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!window.confirm(`Bạn có chắc chắn muốn hủy liên kết thiết bị "${lic.boundDevice?.deviceName}" cho học viên ${userObj?.fullName || lic.userEmail}? Slot này sẽ được giải phóng ngay lập tức.`)) return;
+                                        try {
+                                          const res = await LicenseAPI.resetLicenseSlotAdmin(lic.id);
+                                          setLicenseToast(res.message);
+                                          loadAllData();
+                                          setTimeout(() => setLicenseToast(''), 4000);
+                                        } catch (e: any) {
+                                          alert(e?.response?.data?.error?.message || 'Không thể reset key.');
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 rounded-lg transition cursor-pointer"
+                                    >
+                                      Reset Slot
+                                    </button>
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 italic">Khả dụng</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Right 5 cols: Live Chat & Support Tickets */}
+                <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-[650px] overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50/60 to-white flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-sm">Hộp Thư Hỗ Trợ Đổi Máy</h4>
+                        <p className="text-[11px] text-slate-500">Xử lý yêu cầu reset key của học viên</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => loadAllData()}
+                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                      title="Làm mới"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Ticket List Header / Tabs */}
+                  {adminTickets.length > 0 && (
+                    <div className="px-4 py-2 border-b border-slate-100 bg-slate-50 flex gap-2 overflow-x-auto">
+                      {adminTickets.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setSelectedAdminTicket(t)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                            selectedAdminTicket?.id === t.id
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>{t.userName}</span>
+                          {t.status === 'OPEN' && (
+                            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Active Ticket Conversation */}
+                  {!selectedAdminTicket ? (
+                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 text-xs">
+                      <MessageSquare className="w-10 h-10 text-slate-200 mb-2" />
+                      <p>Chưa có yêu cầu hỗ trợ đổi máy nào từ học viên.</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                      {/* Ticket Action Banner */}
+                      <div className="p-3 bg-indigo-50/70 border-b border-indigo-100 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-bold text-indigo-950">{selectedAdminTicket.userName}</span>
+                          <span className="text-[11px] text-indigo-700 font-mono ml-2">({selectedAdminTicket.userEmail})</span>
+                        </div>
+
+                        {/* 1-Click Approve Reset Key Button */}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const userKeys = adminLicenses.filter(l => l.userId === selectedAdminTicket.userId && l.boundDevice);
+                            if (userKeys.length === 0) {
+                              alert('Học viên này hiện không có key nào đang bị khóa vào thiết bị.');
+                              return;
+                            }
+                            const targetKey = userKeys[0];
+                            if (!window.confirm(`Duyệt hủy liên kết cho ${selectedAdminTicket.userName} (Slot ${targetKey.slotIndex}: ${targetKey.key})?`)) return;
+
+                            try {
+                              const res = await LicenseAPI.resetLicenseSlotAdmin(targetKey.id);
+                              setLicenseToast(res.message);
+                              loadAllData();
+                              setTimeout(() => setLicenseToast(''), 4000);
+                            } catch (e: any) {
+                              alert(e?.response?.data?.error?.message || 'Lỗi khi reset.');
+                            }
+                          }}
+                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1 shadow-xs transition cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Duyệt Hủy Khóa Cũ</span>
+                        </button>
+                      </div>
+
+                      {/* Messages body */}
+                      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/40">
+                        {selectedAdminTicket.messages.map((m) => {
+                          const isAdminSender = m.senderRole === 'ADMIN';
+
+                          return (
+                            <div
+                              key={m.id}
+                              className={`flex flex-col ${isAdminSender ? 'items-end' : 'items-start'}`}
+                            >
+                              <div className="flex items-center space-x-1.5 mb-1 px-1">
+                                <span className="text-[10px] font-semibold text-slate-500">
+                                  {isAdminSender ? 'Admin' : m.senderName}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <div
+                                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs ${
+                                  isAdminSender
+                                    ? 'bg-indigo-600 text-white rounded-br-none'
+                                    : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                                {m.deviceInfoSnapshot && (
+                                  <div className="mt-1.5 pt-1 border-t border-slate-200 text-[10px] text-slate-400 flex items-center">
+                                    <Laptop className="w-3 h-3 mr-1" />
+                                    <span>Thiết bị: {m.deviceInfoSnapshot}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Admin Reply Input */}
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!adminReplyText.trim() || isSendingAdminReply) return;
+                          setIsSendingAdminReply(true);
+                          try {
+                            const updated = await LicenseAPI.sendChatMessage({
+                              message: adminReplyText.trim(),
+                              targetUserId: selectedAdminTicket.userId
+                            });
+                            setAdminReplyText('');
+                            setSelectedAdminTicket(updated);
+                            loadAllData();
+                          } catch (err: any) {
+                            alert(err?.response?.data?.error?.message || 'Không thể gửi tin nhắn.');
+                          } finally {
+                            setIsSendingAdminReply(false);
+                          }
+                        }}
+                        className="p-3 border-t border-slate-100 bg-white flex items-center gap-2"
+                      >
+                        <input
+                          type="text"
+                          value={adminReplyText}
+                          onChange={(e) => setAdminReplyText(e.target.value)}
+                          placeholder="Nhập câu trả lời phản hồi học viên..."
+                          className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition"
+                          disabled={isSendingAdminReply}
+                        />
+                        <button
+                          type="submit"
+                          disabled={!adminReplyText.trim() || isSendingAdminReply}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Gửi</span>
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB 4: QUẢN LÝ HỆ THỐNG */}
           {/* ======================================================== */}
           {activeTab === 'system' && (
             <div className="space-y-2 w-full">

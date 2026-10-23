@@ -376,3 +376,52 @@ export interface LeaderboardResponse {
     topPerformer: UserRankProfile | null;
   };
 }
+
+// --- License Key & Device Lock Types ---
+export type LicenseStatus = 'ACTIVE' | 'REVOKED' | 'EXPIRED';
+
+export interface LicenseDeviceBinding {
+  deviceId: string;
+  deviceFingerprint: string;
+  deviceName: string;
+  activatedAt: string;
+  lastIp: string;
+  lastActiveAt: string;
+}
+
+export interface LicenseKeyItem {
+  id: string;
+  key: string;              // e.g. OE-PRO-98B2-A41F
+  userId: string;
+  userEmail: string;
+  orderCode?: number;
+  slotIndex: 1 | 2;         // 1: Thiết bị 1, 2: Thiết bị 2
+  status: LicenseStatus;
+  boundDevice?: LicenseDeviceBinding | null;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LicenseChatMessage {
+  id: string;
+  senderId: string;
+  senderRole: 'USER' | 'ADMIN';
+  senderName: string;
+  message: string;
+  timestamp: string;
+  deviceInfoSnapshot?: string;
+}
+
+export interface LicenseChatTicket {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  targetKeyId?: string;
+  status: 'OPEN' | 'RESOLVED' | 'CLOSED';
+  messages: LicenseChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+

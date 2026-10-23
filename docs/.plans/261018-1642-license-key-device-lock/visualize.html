@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kế Hoạch Triển Khai: Bản Quyền Thiết Bị & Live Support Chat</title>
+  <link rel="stylesheet" href="./visualize-assets/visualize-theme.css" />
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+  </script>
+</head>
+<body>
+  <div class="viz-shell">
+    <header class="viz-hero">
+      <p class="viz-kicker">OwnEdu Architecture Plan</p>
+      <h1 class="viz-title">Hệ Thống Bản Quyền Thiết Bị & Kênh Chat Hỗ Trợ Đổi Máy</h1>
+      <p class="viz-summary">
+        Khóa bản quyền 2 thiết bị cá nhân (Laptop/PC) bằng Device Fingerprint kết hợp lưu vết IP khi học viên nâng cấp gói PRO, kèm kênh Live Chat với Admin để giải quyết yêu cầu đổi máy/cài lại Win an toàn và thân thiện.
+      </p>
+      <ul class="viz-meta">
+        <li class="viz-pill">Mã kế hoạch: 261018-1642</li>
+        <li class="viz-pill">Phạm vi: PRO Courses, Videos & Exams</li>
+        <li class="viz-pill">Quy chuẩn: 2 Slots / Tài khoản</li>
+        <li class="viz-pill">Hỗ trợ: 1-Click Admin Reset</li>
+      </ul>
+    </header>
+
+    <div class="viz-grid">
+      <!-- Architecture Flow Diagram -->
+      <section class="viz-panel">
+        <h2>Sơ Đồ Luồng Bản Quyền Thiết Bị (DRM & Support Flow)</h2>
+        <div class="mermaid">
+graph TD
+    A["Học viên thanh toán gói PRO (SePay VietQR)"] --> B["Backend nâng cấp PRO & Tự động sinh 2 License Key"]
+    B --> C["Hiển thị 2 Keys trong Profile & Hóa đơn"]
+    
+    C --> D1["Thiết bị 1: Nhập Key 1 (Laptop)"]
+    C --> D2["Thiết bị 2: Nhập Key 2 (PC)"]
+    
+    D1 --> E1["Khóa mã Fingerprint 1 + Lưu vết IP"]
+    D2 --> E2["Khóa mã Fingerprint 2 + Lưu vết IP"]
+    
+    E1 --> F["Học toàn bộ bài giảng, Video R2 & Đề thi PRO"]
+    E2 --> F
+    
+    G["Thiết bị 3: Cố tình đăng nhập học PRO"] --> H{"Kiểm tra Device ID"}
+    H -- "Chưa kích hoạt" --> I["Chặn truy cập & Mở Modal yêu cầu License Key"]
+    I -- "Nhập lại Key 1 hoặc 2" --> J["Báo lỗi 409: Key đã kích hoạt trên máy khác!"]
+    
+    J --> K["Học viên mở Live Chat gửi yêu cầu xin đổi máy"]
+    K --> L["Admin xem lý do & Bấm nút 'Reset Slot' 1-Click"]
+    L --> M["Key được giải phóng về trạng thái trống"]
+    M --> N["Kích hoạt thành công trên máy mới"]
+        </div>
+      </section>
+
+      <!-- 4 Phases of Implementation -->
+      <section class="viz-panel half">
+        <h2>Lộ Trình Triển Khai (4 Phases)</h2>
+        <div class="viz-timeline">
+          <div class="viz-step">
+            <p class="viz-step-title">Phase 01 [M]: Backend License Store & APIs</p>
+            <p class="viz-step-meta">Tạo data model LicenseKeyItem, ChatTicket, auto-gen 2 keys khi mua PRO, các route kích hoạt & xác thực.</p>
+          </div>
+          <div class="viz-step">
+            <p class="viz-step-title">Phase 02 [M]: Frontend Fingerprinting & Activation Modal</p>
+            <p class="viz-step-meta">Module trích xuất vân tay trình duyệt an toàn, Guard chặn bài học PRO, Modal kích hoạt & Thẻ bản quyền trong Profile.</p>
+          </div>
+          <div class="viz-step">
+            <p class="viz-step-title">Phase 03 [M]: Frontend Admin Console & Live Support Chat</p>
+            <p class="viz-step-meta">Tab Quản lý thiết bị trong Admin, 1-Click Reset Slot, và Hộp thoại Live Chat trao đổi học viên & Admin.</p>
+          </div>
+          <div class="viz-step">
+            <p class="viz-step-title">Phase 04 [S]: Integration & E2E Verification</p>
+            <p class="viz-step-meta">Kiểm thử kịch bản 2 máy, chặn máy 3, đổi Wi-Fi/4G không bị văng, gửi chat và duyệt reset slot thành công.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Key Security Principles -->
+      <section class="viz-panel half">
+        <h2>Nguyên Tắc Bảo Mật & Trải Nghiệm Học Viên</h2>
+        <table class="viz-table">
+          <thead>
+            <tr>
+              <th>Yếu tố</th>
+              <th>Giải pháp thiết kế</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Mạng Wi-Fi / 4G đổi IP</strong></td>
+              <td>Không khóa cứng IP đơn thuần. Khóa vào <code>Device Fingerprint</code> phần cứng và trình duyệt, cho phép đổi mạng tự do.</td>
+            </tr>
+            <tr>
+              <td><strong>Giới hạn thiết bị</strong></td>
+              <td>Mỗi user PRO có đúng 2 key tương ứng 2 slot. Chặn ngay máy thứ 3 khi cố tình chia sẻ tài khoản.</td>
+            </tr>
+            <tr>
+              <td><strong>Học viên đổi máy / cài lại Win</strong></td>
+              <td>Học viên nhắn tin trực tiếp trong hệ thống, Admin có nút <strong>Duyệt Hủy Khóa Cũ</strong> 1-click ngay trong khung chat.</td>
+            </tr>
+            <tr>
+              <td><strong>Phạm vi bảo vệ</strong></td>
+              <td>Áp dụng nghiêm ngặt cho nội dung trả phí: Khóa học PRO, Video bài giảng Cloudflare R2, Đề thi PRO.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="viz-callout" style="margin-top: 16px;">
+          <strong>Chính sách minh bạch:</strong> Học viên luôn nhìn thấy tên thiết bị của mình trong tab Profile và thời gian kích hoạt, đảm bảo an tâm và minh bạch tuyệt đối.
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

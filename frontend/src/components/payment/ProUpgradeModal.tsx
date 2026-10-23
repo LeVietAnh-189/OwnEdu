@@ -16,8 +16,8 @@ import {
   AlertTriangle,
   QrCode
 } from 'lucide-react';
-import { PaymentAPI } from '../../services/api';
-import { PaymentOrder, PaymentPlan, PaymentPlanId } from '../../types';
+import { PaymentAPI, LicenseAPI } from '../../services/api';
+import { PaymentOrder, PaymentPlan, PaymentPlanId, LicenseKeyItem } from '../../types';
 import { useUserStore } from '../../store/userStore';
 
 interface ProUpgradeModalProps {
@@ -43,6 +43,8 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(15 * 60);
   const [isSuccessState, setIsSuccessState] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [licenseKeys, setLicenseKeys] = useState<LicenseKeyItem[]>([]);
+  const [isTestingPro, setIsTestingPro] = useState(false);
 
   // Fetch plans on open
   useEffect(() => {
@@ -50,6 +52,7 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
       setIsSuccessState(false);
       setErrorMessage(null);
       setCurrentOrder(null);
+      setLicenseKeys([]);
       setTimeLeftSeconds(15 * 60);
 
       const loadPlans = async () => {
@@ -110,6 +113,23 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedField(fieldName);
     setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleTestProUpgrade = async () => {
+    setIsTestingPro(true);
+    setErrorMessage(null);
+    try {
+      const res = await LicenseAPI.testTogglePro({ targetTier: 'PRO', forceRegenerate: true });
+      await fetchCurrentUser();
+      setLicenseKeys(res.keys || []);
+      setIsSuccessState(true);
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      console.error('Error test upgrading to PRO:', err);
+      setErrorMessage(err?.response?.data?.error?.message || err?.message || 'Lỗi khi kích hoạt PRO thử nghiệm.');
+    } finally {
+      setIsTestingPro(false);
+    }
   };
 
   const handleCreateOrder = async () => {
@@ -197,6 +217,61 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                 </p>
               </div>
 
+              {/* 2 License Keys Display */}
+              <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-300 max-w-md mx-auto text-left space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-amber-950">
+                    <ShieldCheck className="w-4 h-4 text-amber-600" />
+                    <span>2 License Key Bản Quyền Đã Gửi Về:</span>
+                  </div>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                    Khóa 2 Máy
+                  </span>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  {licenseKeys.length === 0 ? (
+                    <div className="text-xs text-slate-500 italic text-center py-2">
+                      Đang đồng bộ License Key từ máy chủ...
+                    </div>
+                  ) : (
+                    licenseKeys.map((lic) => (
+                      <div key={lic.id} className="p-2.5 rounded-xl bg-white border border-amber-200 flex items-center justify-between gap-2 shadow-xs">
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                            Slot {lic.slotIndex}: {lic.slotIndex === 1 ? 'Thiết Bị Chính (Máy 1)' : 'Thiết Bị Phụ (Máy 2)'}
+                          </span>
+                          <span className="font-mono text-xs font-black text-slate-900 tracking-wider">
+                            {lic.key}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(lic.key, `lic_${lic.slotIndex}`)}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 transition flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          {copiedField === `lic_${lic.slotIndex}` ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-700">Đã chép</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Sao chép</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <p className="text-[11px] text-amber-800 leading-snug">
+                  💡 Mỗi License Key chỉ được phép kích hoạt trên 1 máy tính duy nhất để bảo mật bài giảng & video.
+                </p>
+              </div>
+
               <div className="p-4 rounded-2xl bg-orange-50/80 border border-orange-200 max-w-md mx-auto text-left space-y-2">
                 <div className="flex items-center gap-2 text-xs font-bold text-orange-900">
                   <Sparkles className="w-4 h-4 text-orange-600" />
@@ -210,10 +285,10 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                 </ul>
               </div>
 
-              <div className="pt-4">
+              <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <button
                   onClick={onClose}
-                  className="px-8 py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-orange-600 via-amber-500 to-orange-500 text-white shadow-lg shadow-orange-600/30 hover:opacity-95 transition cursor-pointer active:scale-95"
+                  className="w-full sm:w-auto px-8 py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-orange-600 via-amber-500 to-orange-500 text-white shadow-lg shadow-orange-600/30 hover:opacity-95 transition cursor-pointer active:scale-95"
                 >
                   Bắt Đầu Trải Nghiệm Ngay
                 </button>
@@ -335,7 +410,32 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
                   </div>
 
                   {/* Actions */}
-                  <div className="pt-2">
+                  <div className="pt-2 space-y-2">
+                    {/* Sandbox Mock Pay Simulator for Local Testing */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await PaymentAPI.mockPay(currentOrder.orderCode);
+                          try {
+                            const licRes = await LicenseAPI.getMyLicenses();
+                            setLicenseKeys(licRes || []);
+                          } catch (licErr) {
+                            console.error('Error fetching licenses after mock pay:', licErr);
+                          }
+                          setIsSuccessState(true);
+                          await fetchCurrentUser();
+                          if (onSuccess) onSuccess();
+                        } catch (e: any) {
+                          alert(e?.response?.data?.error?.message || 'Lỗi khi giả lập thanh toán.');
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-300 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Sparkles className="w-4 h-4 text-emerald-500" />
+                      <span>🧪 Giả Lập Thanh Toán Thành Công (Sandbox Test)</span>
+                    </button>
+
                     <button
                       onClick={() => setCurrentOrder(null)}
                       className="w-full py-2.5 text-center text-xs text-slate-500 hover:text-slate-800 font-semibold bg-slate-50 hover:bg-slate-100 rounded-xl transition cursor-pointer border border-slate-200"
@@ -349,6 +449,45 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
           ) : (
             /* STATE 3: SELECT PLAN SCREEN */
             <div className="space-y-6">
+              {/* 1-Click Fast Sandbox Test Button */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Sparkles className="w-5 h-5 text-emerald-100" />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                      <span>⚡ Chế Độ Thử Nghiệm Nâng Cấp PRO</span>
+                      <span className="px-1.5 py-0.5 text-[9px] font-black rounded bg-emerald-200 text-emerald-900 uppercase">
+                        Sandbox Dev
+                      </span>
+                    </h5>
+                    <p className="text-[11px] text-emerald-800 mt-0.5 leading-snug">
+                      Nâng cấp ngay không cần quét mã QR để kiểm tra hệ thống tạo & gửi 2 License Key về tài khoản.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTestProUpgrade}
+                  disabled={isTestingPro}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-600/20 transition cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 shrink-0"
+                >
+                  {isTestingPro ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Đang nâng cấp...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 text-emerald-200" />
+                      <span>Test Nâng PRO (Nhận 2 Key)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {plans.map((plan) => {
                   const isSelected = selectedPlanId === plan.id;

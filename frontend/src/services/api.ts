@@ -18,7 +18,9 @@ import {
   PaymentPlanId,
   LeaderboardResponse,
   UserRankProfile,
-  RankBadge
+  RankBadge,
+  LicenseKeyItem,
+  LicenseChatTicket
 } from '../types';
 
 const api = axios.create({
@@ -523,5 +525,63 @@ export const RankAPI = {
   }
 };
 
+export const LicenseAPI = {
+  getMyLicenses: async () => {
+    const res = await api.get<{ success: boolean; data: LicenseKeyItem[] }>('/licenses/my-licenses');
+    return res.data.data;
+  },
+  activateLicense: async (params: {
+    key: string;
+    deviceId: string;
+    deviceFingerprint?: string;
+    deviceName?: string;
+  }) => {
+    const res = await api.post<{
+      success: boolean;
+      data: { success: boolean; message: string; license?: LicenseKeyItem };
+    }>('/licenses/activate', params);
+    return res.data.data;
+  },
+  verifyDevice: async (deviceId: string) => {
+    const res = await api.post<{
+      success: boolean;
+      data: { isAuthorized: boolean; reason?: string; license?: LicenseKeyItem };
+    }>('/licenses/verify-device', { deviceId });
+    return res.data.data;
+  },
+  getAllLicensesAdmin: async () => {
+    const res = await api.get<{ success: boolean; data: LicenseKeyItem[] }>('/licenses/admin/all');
+    return res.data.data;
+  },
+  resetLicenseSlotAdmin: async (keyId: string) => {
+    const res = await api.post<{
+      success: boolean;
+      data: { success: boolean; message: string; license?: LicenseKeyItem };
+    }>('/licenses/admin/reset', { keyId });
+    return res.data.data;
+  },
+  getChatTickets: async () => {
+    const res = await api.get<{ success: boolean; data: LicenseChatTicket[] }>('/licenses/tickets');
+    return res.data.data;
+  },
+  sendChatMessage: async (params: {
+    message: string;
+    targetKeyId?: string;
+    deviceInfoSnapshot?: string;
+    targetUserId?: string;
+  }) => {
+    const res = await api.post<{ success: boolean; data: LicenseChatTicket }>('/licenses/tickets/message', params);
+    return res.data.data;
+  },
+  testTogglePro: async (params?: { targetTier?: 'PRO' | 'FREE'; forceRegenerate?: boolean }) => {
+    const res = await api.post<{
+      success: boolean;
+      data: { message: string; user: User; keys: LicenseKeyItem[] };
+    }>('/licenses/test-toggle-pro', params || {});
+    return res.data.data;
+  }
+};
+
 export default api;
+
 

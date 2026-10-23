@@ -49,16 +49,24 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
-  Terminal
+  Terminal,
+  ShieldCheck,
+  MessageSquare,
+  Laptop,
+  Key,
+  Copy
 } from 'lucide-react';
-import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, SystemServiceAPI, PaymentAPI, RankAPI } from '../services/api';
-import { Course, DocumentItem, Exam, VideoItem, PaymentOrder, Chapter, Lesson, RankBadge } from '../types';
+import { AdminAPI, DocumentAPI, ExamAPI, VideoAPI, SystemServiceAPI, PaymentAPI, RankAPI, LicenseAPI } from '../services/api';
+import { Course, DocumentItem, Exam, VideoItem, PaymentOrder, Chapter, Lesson, RankBadge, LicenseKeyItem } from '../types';
 import { useUserStore } from '../store/userStore';
 import { useLayoutStore } from '../store/layoutStore';
 import { ProUpgradeModal } from '../components/payment/ProUpgradeModal';
 import { HypertextRenderer } from '../components/HypertextRenderer';
 import { CourseSandbox } from '../components/sandbox/CourseSandbox';
 import { LeaderboardTab } from '../components/rank/LeaderboardTab';
+import { DeviceActivationModal } from '../components/license/DeviceActivationModal';
+import { LicenseChatModal } from '../components/license/LicenseChatModal';
+import { getOrCreateDeviceId } from '../utils/deviceFingerprint';
 
 export const USER_COURSE_TOPICS = [
   { id: 'ALL', name: 'Tất cả chủ đề', icon: Layers },
@@ -116,8 +124,27 @@ export const UserPage: React.FC = () => {
         .then(res => setOrders(res || []))
         .catch(() => setOrders([]))
         .finally(() => setIsLoadingOrders(false));
+
+      LicenseAPI.getMyLicenses()
+        .then(res => setUserLicenses(res || []))
+        .catch(() => setUserLicenses([]));
     }
   }, [activeTab]);
+
+  // License DRM & Device Lock state
+  const [userLicenses, setUserLicenses] = useState<LicenseKeyItem[]>([]);
+  const [isDeviceModalOpen, setIsDeviceModalOpen] = useState<boolean>(false);
+  const [isLicenseChatOpen, setIsLicenseChatOpen] = useState<boolean>(false);
+  const [selectedKeyForChat, setSelectedKeyForChat] = useState<LicenseKeyItem | null>(null);
+  const [pendingProCourse, setPendingProCourse] = useState<Course | null>(null);
+  const [copiedLicenseKey, setCopiedLicenseKey] = useState<string | null>(null);
+
+  const fetchUserLicenses = async () => {
+    try {
+      const data = await LicenseAPI.getMyLicenses();
+      setUserLicenses(data || []);
+    } catch {}
+  };
 
   // Course Classroom & Active Lesson state
   const courseIdParam = searchParams.get('courseId');
@@ -290,8 +317,38 @@ export const UserPage: React.FC = () => {
     });
   };
 
-  const handleOpenCourse = (c: Course) => {
+  const handleOpenCourse = async (c: Course) => {
     if (c.status === 'draft') return;
+
+    // Kiểm tra bản quyền đối với khóa học PRO
+    const isProCourse = c.isFreeTier === false || c.tierRequired === 'PRO';
+    if (isProCourse) {
+      if (currentUser?.tier !== 'PRO' && currentUser?.role !== 'ADMIN') {
+        const paymentSrv = maintenanceServices.find(s => s.key === 'payment');
+        if (paymentSrv) {
+          setShowPaymentMaintenanceModal(true);
+        } else {
+          setIsUpgradeModalOpen(true);
+        }
+        return;
+      }
+
+      // Nếu là học viên PRO: Kiểm tra xem thiết bị này đã được kích hoạt license key chưa
+      if (currentUser?.role !== 'ADMIN') {
+        const deviceId = getOrCreateDeviceId();
+        try {
+          const verify = await LicenseAPI.verifyDevice(deviceId);
+          if (!verify.isAuthorized && verify.reason === 'DEVICE_NOT_ACTIVATED') {
+            setPendingProCourse(c);
+            setIsDeviceModalOpen(true);
+            return;
+          }
+        } catch {
+          // Bỏ qua nếu có lỗi mạng
+        }
+      }
+    }
+
     setSelectedCourseForDetail(c);
     const allLessons = (c.chapters || []).flatMap(ch => ch.lessons || []);
     let targetLessonId: string | undefined = undefined;
@@ -1558,20 +1615,65 @@ export const UserPage: React.FC = () => {
                 </div>
 
                 {currentUser?.tier === 'PRO' ? (
-                  <div className="pt-1">
+                  <div className="pt-1 space-y-1.5">
                     <div className="w-full py-2 px-3 rounded-xl bg-amber-100/80 border border-amber-300 text-amber-900 text-center text-xs font-bold flex items-center justify-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                       <span>Bạn đã là PRO VIP</span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/user?tab=profile')}
+                      className="w-full py-2 px-3 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
+                    >
+                      <Key className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Xem 2 License Key</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await LicenseAPI.testTogglePro({ targetTier: 'FREE' });
+                          await fetchCurrentUser();
+                          await fetchUserLicenses();
+                          alert('🔄 Đã reset tài khoản về Gói Miễn Phí (Free) để bạn test lại.');
+                        } catch (err: any) {
+                          alert(err?.response?.data?.error?.message || 'Lỗi khi reset.');
+                        }
+                      }}
+                      className="w-full py-1 text-[11px] text-slate-500 hover:text-slate-800 hover:underline text-center cursor-pointer"
+                    >
+                      Reset về Free để test lại
+                    </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setIsUpgradeModalOpen(true)}
-                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm shadow-orange-500/30 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <Crown className="w-3.5 h-3.5" />
-                    <span>Nâng cấp PRO chỉ từ 69k</span>
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setIsUpgradeModalOpen(true)}
+                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm shadow-orange-500/30 cursor-pointer active:scale-[0.98] transition-all"
+                    >
+                      <Crown className="w-3.5 h-3.5" />
+                      <span>Nâng cấp PRO chỉ từ 69k</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await LicenseAPI.testTogglePro({ targetTier: 'PRO', forceRegenerate: true });
+                          await fetchCurrentUser();
+                          await fetchUserLicenses();
+                          alert(`🎉 Đã kích hoạt Gói PRO thử nghiệm!\n\n2 License Key đã gửi về:\n• Slot 1: ${res.keys[0]?.key}\n• Slot 2: ${res.keys[1]?.key}\n\nChuyển sang tab Hồ sơ để xem chi tiết.`);
+                          navigate('/user?tab=profile');
+                        } catch (err: any) {
+                          alert(err?.response?.data?.error?.message || 'Lỗi khi kích hoạt.');
+                        }
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs"
+                      title="Nâng cấp PRO ngay không cần thanh toán để test License DRM"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>⚡ Test Nâng PRO (Nhận 2 Key)</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -2099,20 +2201,65 @@ export const UserPage: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => {
-                  const paymentSrv = maintenanceServices.find(s => s.key === 'payment');
-                  if (paymentSrv) {
-                    setShowPaymentMaintenanceModal(true);
-                  } else {
-                    setIsUpgradeModalOpen(true);
-                  }
-                }}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-orange-600/20 hover:from-amber-600 hover:to-orange-700 transition cursor-pointer flex items-center gap-2"
-              >
-                <Crown className="w-4 h-4 text-amber-200" />
-                <span>{currentUser?.tier === 'PRO' ? 'Gia hạn gói Pro VIP' : 'Nâng cấp Pro VIP ngay'}</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* 1-Click Test Pro Button Requested by User */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await LicenseAPI.testTogglePro({ targetTier: 'PRO', forceRegenerate: true });
+                      await fetchCurrentUser();
+                      await fetchUserLicenses();
+                      alert('🎉 Kích hoạt Gói PRO thử nghiệm thành công!\n\n2 License Key đã được tạo và gửi về tài khoản của bạn:\n• Slot 1: ' + (res.keys[0]?.key || '') + '\n• Slot 2: ' + (res.keys[1]?.key || '') + '\n\nCuộn xuống bên dưới để xem 2 thẻ License Key chi tiết.');
+                      const el = document.getElementById('license-drm-section');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    } catch (err: any) {
+                      alert(err?.response?.data?.error?.message || 'Lỗi khi kích hoạt PRO thử nghiệm.');
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-600/20 transition cursor-pointer flex items-center gap-1.5"
+                  title="Bấm để nâng cấp PRO và nhận ngay 2 License Key thử nghiệm mà không cần thanh toán thật"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-200" />
+                  <span>⚡ Test Nâng Gói PRO (Nhận 2 Key)</span>
+                </button>
+
+                {currentUser?.tier === 'PRO' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await LicenseAPI.testTogglePro({ targetTier: 'FREE' });
+                        await fetchCurrentUser();
+                        await fetchUserLicenses();
+                        alert('🔄 Đã reset tài khoản về Gói Miễn Phí (Free). Bạn có thể bấm lại nút "⚡ Test Nâng Gói PRO" để thử nghiệm lại từ đầu!');
+                      } catch (err: any) {
+                        alert(err?.response?.data?.error?.message || 'Lỗi khi reset.');
+                      }
+                    }}
+                    className="px-3 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer flex items-center gap-1"
+                    title="Reset tài khoản về Free để test lại quy trình nâng cấp"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Reset về Free</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    const paymentSrv = maintenanceServices.find(s => s.key === 'payment');
+                    if (paymentSrv) {
+                      setShowPaymentMaintenanceModal(true);
+                    } else {
+                      setIsUpgradeModalOpen(true);
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white text-orange-700 border border-orange-300 hover:bg-orange-50 transition cursor-pointer flex items-center gap-2"
+                >
+                  <Crown className="w-4 h-4 text-amber-500" />
+                  <span>{currentUser?.tier === 'PRO' ? 'Gia hạn SePay' : 'Nâng cấp SePay'}</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
@@ -2135,6 +2282,193 @@ export const UserPage: React.FC = () => {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* License Keys & Device Lock Management Section */}
+          <div id="license-drm-section">
+            {currentUser?.tier === 'PRO' ? (
+              <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200/60 shadow-xs">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      Bản Quyền Thiết Bị (License DRM)
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                        2 Máy / Tài Khoản
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500">Mỗi License Key dùng cho 1 máy tính để học bài giảng & video PRO</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedKeyForChat(null);
+                      setIsLicenseChatOpen(true);
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/70 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <MessageSquare className="w-4 h-4 text-indigo-600" />
+                    <span>Chat Hỗ Trợ Đổi Máy</span>
+                  </button>
+                  <button
+                    onClick={() => setIsDeviceModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Laptop className="w-4 h-4 text-slate-600" />
+                    <span>Quản Lý Máy Này</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2 License Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                {userLicenses.length === 0 ? (
+                  <div className="col-span-2 text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    Đang đồng bộ License Key cho tài khoản PRO...
+                  </div>
+                ) : (
+                  userLicenses.map((lic) => {
+                    const myDeviceId = getOrCreateDeviceId();
+                    const isMyDevice = lic.boundDevice?.deviceId === myDeviceId;
+
+                    return (
+                      <div
+                        key={lic.id}
+                        className={`p-4 rounded-2xl border transition-all ${
+                          isMyDevice
+                            ? 'bg-gradient-to-br from-emerald-50/70 via-white to-emerald-50/30 border-emerald-300 ring-2 ring-emerald-500/10'
+                            : lic.boundDevice
+                            ? 'bg-slate-50/70 border-slate-200'
+                            : 'bg-white border-amber-200 hover:border-amber-300 shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <Key className="w-4 h-4 text-amber-500" />
+                            Slot {lic.slotIndex}: {lic.slotIndex === 1 ? 'Thiết Bị Chính (Máy 1)' : 'Thiết Bị Phụ (Máy 2)'}
+                          </span>
+                          {isMyDevice ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Đang dùng trên máy này
+                            </span>
+                          ) : lic.boundDevice ? (
+                            <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-slate-200 text-slate-700">
+                              Đã gắn máy khác
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                              Chưa kích hoạt (Còn trống)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* License Code & Copy */}
+                        <div className="flex items-center justify-between p-2.5 bg-slate-100/80 rounded-xl font-mono text-xs font-bold text-slate-900 mb-3">
+                          <span>{lic.key}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(lic.key);
+                              setCopiedLicenseKey(lic.key);
+                              setTimeout(() => setCopiedLicenseKey(null), 2000);
+                            }}
+                            className="p-1 text-slate-400 hover:text-slate-700 transition"
+                            title="Sao chép License Key"
+                          >
+                            {copiedLicenseKey === lic.key ? (
+                              <Check className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Device Binding Details */}
+                        <div className="text-xs text-slate-600 space-y-1">
+                          {lic.boundDevice ? (
+                            <>
+                              <div className="flex items-center gap-1.5 text-slate-800 font-medium">
+                                <Laptop className="w-3.5 h-3.5 text-slate-500" />
+                                <span className="truncate">{lic.boundDevice.deviceName}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1">
+                                <span>Kích hoạt: {new Date(lic.boundDevice.activatedAt).toLocaleDateString('vi-VN')}</span>
+                                <span className="font-mono text-[10px] bg-slate-200/60 px-1.5 py-0.5 rounded">IP: {lic.boundDevice.lastIp}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-slate-400 italic text-[11px] py-1">
+                              Chưa có thiết bị nào kích hoạt mã này. Bạn có thể sử dụng trên máy tính thứ hai.
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-end gap-2">
+                          {lic.boundDevice && !isMyDevice && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedKeyForChat(lic);
+                                setIsLicenseChatOpen(true);
+                              }}
+                              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                            >
+                              <MessageSquare className="w-3 h-3" />
+                              <span>Xin hủy liên kết máy cũ</span>
+                            </button>
+                          )}
+                          {!lic.boundDevice && (
+                            <button
+                              type="button"
+                              onClick={() => setIsDeviceModalOpen(true)}
+                              className="w-full py-1.5 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg transition cursor-pointer"
+                            >
+                              Kích hoạt cho máy tính này
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ) : (
+              <div className="p-6 rounded-3xl bg-slate-50 border-2 border-dashed border-slate-200 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200/60 shadow-xs">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">Bản Quyền Thiết Bị (Khóa 2 Máy)</h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                    Tài khoản hiện tại đang ở <strong>Gói Miễn Phí</strong>. Khi nâng cấp lên PRO, hệ thống sẽ tự động tạo và gửi 2 License Key về đây để kích hoạt trên tối đa 2 máy tính.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await LicenseAPI.testTogglePro({ targetTier: 'PRO', forceRegenerate: true });
+                      await fetchCurrentUser();
+                      await fetchUserLicenses();
+                      alert('🎉 Kích hoạt Gói PRO thử nghiệm thành công!\n\n2 License Key đã được tạo và gửi về tài khoản của bạn:\n• Slot 1: ' + (res.keys[0]?.key || '') + '\n• Slot 2: ' + (res.keys[1]?.key || ''));
+                    } catch (err: any) {
+                      alert(err?.response?.data?.error?.message || 'Lỗi khi kích hoạt.');
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-600/20 transition cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-200" />
+                  <span>⚡ Nhận 2 License Key Thử Nghiệm Ngay</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Transaction History Section (SePay VietQR) */}
@@ -2325,6 +2659,35 @@ export const UserPage: React.FC = () => {
         onSuccess={() => {
           fetchCurrentUser();
           PaymentAPI.getOrders().then(res => setOrders(res || [])).catch(() => {});
+          fetchUserLicenses();
+        }}
+      />
+
+      {/* Device Activation Modal */}
+      <DeviceActivationModal
+        isOpen={isDeviceModalOpen}
+        onClose={() => setIsDeviceModalOpen(false)}
+        courseTitle={pendingProCourse?.name}
+        onSuccess={() => {
+          fetchUserLicenses();
+          if (pendingProCourse) {
+            const courseToOpen = pendingProCourse;
+            setPendingProCourse(null);
+            handleOpenCourse(courseToOpen);
+          }
+        }}
+      />
+
+      {/* License Support Live Chat Modal */}
+      <LicenseChatModal
+        isOpen={isLicenseChatOpen}
+        onClose={() => {
+          setIsLicenseChatOpen(false);
+          fetchUserLicenses();
+        }}
+        targetKey={selectedKeyForChat}
+        onKeyResetSuccess={() => {
+          fetchUserLicenses();
         }}
       />
     </div>

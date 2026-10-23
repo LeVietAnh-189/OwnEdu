@@ -15,11 +15,15 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   X,
-  Trophy
+  Trophy,
+  Key,
+  RotateCcw,
+  ShieldCheck
 } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { ProUpgradeModal } from '../payment/ProUpgradeModal';
+import { LicenseAPI } from '../../services/api';
 
 export type UserTabKey = 'courses' | 'my-courses' | 'my-documents' | 'my-exams' | 'leaderboard' | 'profile';
 
@@ -335,6 +339,57 @@ export const UserLayout: React.FC = () => {
           >
             {currentUser?.tier === 'PRO' ? 'Xem chi tiết & Gia hạn' : 'Nâng cấp Pro VIP ngay'}
           </button>
+
+          {/* Quick Sandbox Test Pro Button */}
+          {currentUser?.tier !== 'PRO' ? (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const res = await LicenseAPI.testTogglePro({ targetTier: 'PRO', forceRegenerate: true });
+                  await fetchCurrentUser();
+                  alert(`🎉 Đã kích hoạt Gói PRO thử nghiệm thành công!\n\n2 License Key đã gửi về tài khoản:\n• Slot 1: ${res.keys[0]?.key}\n• Slot 2: ${res.keys[1]?.key}\n\nChuyển sang tab "Hồ sơ" để xem chi tiết.`);
+                  navigate('/user?tab=profile');
+                } catch (err: any) {
+                  alert(err?.response?.data?.error?.message || 'Lỗi khi kích hoạt PRO thử nghiệm.');
+                }
+              }}
+              className="w-full py-1.5 text-center text-xs font-black text-emerald-800 bg-emerald-100 hover:bg-emerald-200 rounded-xl border border-emerald-300 shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+              title="Test nâng cấp PRO ngay và nhận 2 License Key mà không cần thanh toán thật"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              <span>⚡ Test Nâng PRO (2 Key)</span>
+            </button>
+          ) : (
+            <div className="flex gap-1.5 pt-0.5">
+              <button
+                type="button"
+                onClick={() => navigate('/user?tab=profile')}
+                className="flex-1 py-1 text-center text-[11px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-lg transition flex items-center justify-center gap-1 cursor-pointer"
+                title="Xem danh sách 2 License Key và quản lý máy"
+              >
+                <Key className="w-3 h-3 text-amber-600" />
+                <span>Xem 2 Key</span>
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await LicenseAPI.testTogglePro({ targetTier: 'FREE' });
+                    await fetchCurrentUser();
+                    alert('🔄 Đã reset tài khoản về Gói Miễn Phí (Free). Bạn có thể bấm lại nút "⚡ Test Nâng PRO" để thử lại.');
+                  } catch (err: any) {
+                    alert(err?.response?.data?.error?.message || 'Lỗi khi reset.');
+                  }
+                }}
+                className="py-1 px-2 text-[11px] font-semibold text-slate-500 hover:text-slate-800 bg-white/70 hover:bg-white rounded-lg border border-slate-200 transition cursor-pointer flex items-center gap-1"
+                title="Reset về Free để test lại"
+              >
+                <RotateCcw className="w-3 h-3 text-slate-400" />
+                <span>Reset Free</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -399,24 +454,75 @@ export const UserLayout: React.FC = () => {
             </strong>
           </button>
 
-          {/* Pro VIP Upgrade CTA Button */}
+          {/* Pro VIP Upgrade CTA Button & 1-Click Fast Sandbox Test Button */}
           {currentUser?.tier !== 'PRO' ? (
-            <button
-              onClick={() => setIsUpgradeModalOpen(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs hover:shadow-md hover:from-amber-600 hover:to-orange-600 transition-all cursor-pointer active:scale-95"
-            >
-              <Crown className="w-3.5 h-3.5 text-amber-100" />
-              <span>Nâng cấp Pro</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await LicenseAPI.testTogglePro({ targetTier: 'PRO', forceRegenerate: true });
+                    await fetchCurrentUser();
+                    alert(`🎉 Đã kích hoạt Gói PRO thử nghiệm thành công!\n\n2 License Key đã gửi về tài khoản của bạn:\n• Slot 1: ${res.keys[0]?.key}\n• Slot 2: ${res.keys[1]?.key}\n\nĐang chuyển sang tab Hồ sơ để bạn xem thẻ bản quyền và kích hoạt máy...`);
+                    navigate('/user?tab=profile');
+                  } catch (err: any) {
+                    alert(err?.response?.data?.error?.message || 'Lỗi khi kích hoạt.');
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm shadow-emerald-600/30 transition-all cursor-pointer active:scale-95 animate-pulse hover:animate-none"
+                title="Bấm để nâng cấp PRO thử nghiệm ngay và nhận 2 License Key mà không cần thanh toán thật"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+                <span>⚡ Test Nâng PRO (2 Key)</span>
+              </button>
+
+              <button
+                onClick={() => setIsUpgradeModalOpen(true)}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs hover:shadow-md hover:from-amber-600 hover:to-orange-600 transition-all cursor-pointer active:scale-95"
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-100" />
+                <span>Nâng cấp Pro</span>
+              </button>
+            </>
           ) : (
-            <button
-              onClick={() => setIsUpgradeModalOpen(true)}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
-              title="Gói Pro VIP đang hoạt động - Nhấp để xem hạn dùng hoặc gia hạn"
-            >
-              <Crown className="w-3.5 h-3.5 text-emerald-600" />
-              <span>PRO VIP</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsUpgradeModalOpen(true)}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
+                title="Gói Pro VIP đang hoạt động - Nhấp để xem hạn dùng hoặc gia hạn"
+              >
+                <Crown className="w-3.5 h-3.5 text-emerald-600" />
+                <span>PRO VIP</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/user?tab=profile')}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition cursor-pointer"
+                title="Xem danh sách 2 License Key"
+              >
+                <Key className="w-3.5 h-3.5 text-amber-600" />
+                <span>2 Key</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await LicenseAPI.testTogglePro({ targetTier: 'FREE' });
+                    await fetchCurrentUser();
+                    alert('🔄 Đã reset tài khoản về Gói Miễn Phí (Free) để bạn thử nghiệm lại quy trình nâng cấp.');
+                  } catch (err: any) {
+                    alert(err?.response?.data?.error?.message || 'Lỗi khi reset.');
+                  }
+                }}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium text-slate-500 hover:text-slate-800 bg-white border border-slate-200 hover:bg-slate-50 transition cursor-pointer"
+                title="Reset về Free để test lại"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                <span className="hidden md:inline">Reset Free</span>
+              </button>
+            </div>
           )}
 
           {/* User Profile Pill */}

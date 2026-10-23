@@ -1588,4 +1588,191 @@ apiRouter.get('/rank/my-profile', (_req: Request, res: Response) => {
   });
 });
 
+// ============================================================================
+// 9. LICENSE KEY DRM & DEVICE LOCK APIS
+// ============================================================================
+
+// 9.1 Lấy danh sách License Keys của học viên hiện tại
+apiRouter.get('/licenses/my-licenses', (_req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (!currentUser) {
+    return errorResponse(res, 'E-AUTH-001', 'Vui lòng đăng nhập.', 401);
+  }
+
+  let keys = db.getLicenseKeys(currentUser.id);
+  // Nếu tài khoản là PRO mà chưa có keys (tài khoản seed hoặc tạo trước đó), tự động cấp
+  if (currentUser.tier === 'PRO' && keys.length < 2) {
+    keys = db.generateUserLicenseKeys(currentUser.id, currentUser.proExpiresAt);
+  }
+
+  return successResponse(res, keys);
+});
+
+// 9.2 Kích hoạt License Key cho thiết bị hiện tại
+apiRouter.post('/licenses/activate', (req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (!currentUser) {
+    return errorResponse(res, 'E-AUTH-001', 'Vui lòng đăng nhập.', 401);
+  }
+
+  const { key, deviceId, deviceFingerprint, deviceName } = req.body;
+  if (!key || !deviceId) {
+    return errorResponse(res, 'E-LIC-001', 'Vui lòng cung cấp mã License Key và mã thiết bị.', 400);
+  }
+
+  const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(',')[0].trim();
+
+  const result = db.activateLicenseKey({
+    userId: currentUser.id,
+    key: String(key).trim(),
+    deviceId: String(deviceId).trim(),
+    deviceFingerprint: String(deviceFingerprint || ''),
+    deviceName: String(deviceName || 'Thiết bị người dùng'),
+    ip
+  });
+
+  if (!result.success) {
+    const isConflict = result.message.includes('liên kết với thiết bị');
+    return errorResponse(res, isConflict ? 'E-LIC-409' : 'E-LIC-400', result.message, isConflict ? 409 : 400);
+  }
+
+  return successResponse(res, result);
+});
+
+// 9.3 Kiểm tra xem thiết bị hiện tại đã được cấp phép học nội dung PRO chưa
+apiRouter.post('/licenses/verify-device', (req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (!currentUser) {
+    return errorResponse(res, 'E-AUTH-001', 'Vui lòng đăng nhập.', 401);
+  }
+
+  const { deviceId } = req.body;
+  if (!deviceId) {
+    return errorResponse(res, 'E-LIC-002', 'Thiếu deviceId.', 400);
+  }
+
+  const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(',')[0].trim();
+
+  const result = db.verifyDeviceAccess(currentUser.id, String(deviceId).trim(), ip);
+  return successResponse(res, result);
+});
+
+// 9.4 [ADMIN] Lấy toàn bộ danh sách License Keys trong hệ thống
+apiRouter.get('/licenses/admin/all', (_req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (currentUser?.role !== 'ADMIN') {
+    return errorResponse(res, 'E-PERM-403', 'Bạn không có quyền quản trị.', 403);
+  }
+
+  const licenses = db.getLicenseKeys();
+  return successResponse(res, licenses);
+});
+
+// 9.5 [ADMIN] Reset Slot - Hủy liên kết thiết bị cũ cho License Key
+apiRouter.post('/licenses/admin/reset', (req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (currentUser?.role !== 'ADMIN') {
+    return errorResponse(res, 'E-PERM-403', 'Bạn không có quyền quản trị.', 403);
+  }
+
+  const { keyId } = req.body;
+  if (!keyId) {
+    return errorResponse(res, 'E-LIC-003', 'Thiếu keyId hoặc mã key cần reset.', 400);
+  }
+
+  const result = db.adminResetLicenseSlot(String(keyId).trim());
+  if (!result.success) {
+    return errorResponse(res, 'E-LIC-404', result.message, 404);
+  }
+
+  return successResponse(res, result);
+});
+
+// 9.6 Lấy danh sách tin nhắn chat hỗ trợ đổi key
+apiRouter.get('/licenses/tickets', (_req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (!currentUser) {
+    return errorResponse(res, 'E-AUTH-001', 'Vui lòng đăng nhập.', 401);
+  }
+
+  if (currentUser.role === 'ADMIN') {
+    return successResponse(res, db.getChatTickets());
+  }
+
+  const userTickets = db.getChatTickets(currentUser.id);
+  return successResponse(res, userTickets);
+});
+
+// 9.7 Gửi tin nhắn chat mới xin reset key hoặc Admin phản hồi
+apiRouter.post('/licenses/tickets/message', (req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (!currentUser) {
+    return errorResponse(res, 'E-AUTH-001', 'Vui lòng đăng nhập.', 401);
+  }
+
+  const { message, targetKeyId, deviceInfoSnapshot, targetUserId } = req.body;
+  if (!message || !String(message).trim()) {
+    return errorResponse(res, 'E-CHAT-001', 'Nội dung tin nhắn không được để trống.', 400);
+  }
+
+  const isAdmin = currentUser.role === 'ADMIN';
+  const userId = isAdmin && targetUserId ? targetUserId : currentUser.id;
+
+  const ticket = db.sendChatMessage({
+    userId,
+    senderId: currentUser.id,
+    senderRole: isAdmin ? 'ADMIN' : 'USER',
+    senderName: isAdmin ? 'Quản Trị Viên OwnEdu' : (currentUser.fullName || 'Học viên'),
+    message: String(message).trim(),
+    targetKeyId,
+    deviceInfoSnapshot
+  });
+
+  return successResponse(res, ticket);
+});
+
+// 9.8 [DEMO / TEST] Nâng cấp PRO thử nghiệm 1-click & sinh ngay 2 License Keys
+apiRouter.post('/licenses/test-toggle-pro', (req: Request, res: Response) => {
+  const currentUser = db.getCurrentUser();
+  if (!currentUser) {
+    return errorResponse(res, 'E-AUTH-001', 'Vui lòng đăng nhập.', 401);
+  }
+
+  const { targetTier, forceRegenerate } = req.body;
+  const nextTier = targetTier || (currentUser.tier === 'PRO' ? 'FREE' : 'PRO');
+
+  if (nextTier === 'PRO') {
+    // Nếu forceRegenerate thì xóa các key cũ để cấp 2 key mới tinh
+    if (forceRegenerate && (db as any).data?.licenseKeys) {
+      (db as any).data.licenseKeys = (db as any).data.licenseKeys.filter((k: any) => k.userId !== currentUser.id);
+    }
+
+    // Nâng lên PRO 30 ngày và tự động cấp 2 License Keys
+    const updatedUser = db.upgradeUserToPro(currentUser.id, 30);
+    const keys = db.getLicenseKeys(currentUser.id);
+    return successResponse(res, {
+      message: 'Kích hoạt Gói PRO VIP thử nghiệm thành công! Hệ thống đã tạo và gửi 2 License Key về tài khoản của bạn.',
+      user: updatedUser,
+      keys
+    });
+  } else {
+    // Reset về FREE để kiểm thử lại từ đầu
+    db.updateUser(currentUser.id, { tier: 'FREE', proExpiresAt: undefined });
+    if ((db as any).data?.licenseKeys) {
+      (db as any).data.licenseKeys = (db as any).data.licenseKeys.filter((k: any) => k.userId !== currentUser.id);
+      (db as any).persist();
+    }
+    const updatedUser = db.getCurrentUser();
+    return successResponse(res, {
+      message: 'Đã reset tài khoản về Gói Miễn Phí (FREE). Dữ liệu License Key đã được làm mới để bạn test lại.',
+      user: updatedUser,
+      keys: []
+    });
+  }
+});
+
+
+
 
