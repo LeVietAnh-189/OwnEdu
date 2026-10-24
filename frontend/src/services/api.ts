@@ -30,6 +30,15 @@ const api = axios.create({
   },
 });
 
+// Gắn kèm x-user-id nếu đã đăng nhập để backend nhận diện đúng phiên
+api.interceptors.request.use((config) => {
+  const activeUserId = localStorage.getItem('ownedu_active_user_id');
+  if (activeUserId) {
+    config.headers['x-user-id'] = activeUserId;
+  }
+  return config;
+});
+
 export const DocumentAPI = {
   list: async () => {
     const res = await api.get<{ success: boolean; data: DocumentItem[] }>('/documents');
@@ -191,6 +200,8 @@ export interface SystemSettingsData {
   geminiApiKeyMasked: string;
   openaiApiKey: string;
   hasOpenAiKey: boolean;
+  googleClientId?: string;
+  hasGoogleAuth?: boolean;
   r2AccountId: string;
   r2AccessKeyId: string;
   r2SecretAccessKey: string;
@@ -211,6 +222,7 @@ export const SettingsAPI = {
     gemini_api_key?: string;
     openai_api_key?: string;
     active_model?: string;
+    google_client_id?: string;
     r2_account_id?: string;
     r2_access_key_id?: string;
     r2_secret_access_key?: string;
@@ -223,6 +235,7 @@ export const SettingsAPI = {
         activeModel: string;
         hasGeminiKey: boolean;
         hasR2Config: boolean;
+        hasGoogleAuth?: boolean;
         message: string;
       };
     }>('/settings', payload);
@@ -283,6 +296,25 @@ export const UserAPI = {
   },
   delete: async (id: string) => {
     const res = await api.delete<{ success: boolean; data: { message: string } }>(`/users/${id}`);
+    return res.data.data;
+  },
+};
+
+export const AuthAPI = {
+  getConfig: async () => {
+    const res = await api.get<{ success: boolean; data: { googleClientId: string } }>('/auth/config');
+    return res.data.data;
+  },
+  loginWithGoogle: async (credential: string) => {
+    const res = await api.post<{ success: boolean; data: { user: User; message: string } }>('/auth/google', { credential });
+    return res.data.data;
+  },
+  loginWithMockGoogle: async (payload: { email: string; name?: string; picture?: string }) => {
+    const res = await api.post<{ success: boolean; data: { user: User; message: string } }>('/auth/google', { mockUser: payload });
+    return res.data.data;
+  },
+  logout: async () => {
+    const res = await api.post<{ success: boolean; data: { message: string } }>('/auth/logout');
     return res.data.data;
   },
 };

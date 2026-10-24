@@ -33,6 +33,7 @@ export interface SystemSettings {
   geminiApiKey?: string;
   openaiApiKey?: string;
   activeModel: 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'gpt-4o-mini' | 'offline-smart';
+  googleClientId?: string;
 }
 
 export const DEFAULT_SYSTEM_SERVICES: SystemServiceConfig[] = [
@@ -375,6 +376,23 @@ export class HybridStore {
     return this.data.users;
   }
 
+  public getUserById(id: string): User | undefined {
+    return this.data.users.find(u => u.id === id);
+  }
+
+  public getUserByEmail(email: string): User | undefined {
+    return this.data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  }
+
+  public getUserByGoogleId(googleId: string): User | undefined {
+    return this.data.users.find(u => u.googleId === googleId);
+  }
+
+  public setActiveUserId(userId: string | null): void {
+    this.data.activeUserId = userId || undefined;
+    this.persist();
+  }
+
   public updateUser(id: string, updates: Partial<User>): User | null {
     const user = this.data.users.find(u => u.id === id);
     if (!user) return null;
@@ -384,6 +402,8 @@ export class HybridStore {
     if (updates.email !== undefined) user.email = updates.email;
     if (updates.code !== undefined) user.code = updates.code;
     if (updates.proExpiresAt !== undefined) user.proExpiresAt = updates.proExpiresAt;
+    if (updates.avatarUrl !== undefined) user.avatarUrl = updates.avatarUrl;
+    if (updates.googleId !== undefined) user.googleId = updates.googleId;
     this.persist();
     return user;
   }

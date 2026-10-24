@@ -40,7 +40,7 @@ export const UserLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { currentUser, switchRole, isLoading: isUserLoading, fetchCurrentUser } = useUserStore();
+  const { currentUser, switchRole, isLoading: isUserLoading, fetchCurrentUser, logout } = useUserStore();
   const { isSidebarCollapsed, toggleSidebar } = useLayoutStore();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -67,7 +67,8 @@ export const UserLayout: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     navigate('/');
   };
 
@@ -530,9 +531,17 @@ export const UserLayout: React.FC = () => {
             to="/user?tab=profile"
             className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200/90 text-xs shadow-xs transition"
           >
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-orange-500 to-rose-600 text-white font-black flex items-center justify-center text-[10px] shadow-xs">
-              {currentUser?.fullName?.charAt(0) || 'U'}
-            </div>
+            {currentUser?.avatarUrl ? (
+              <img
+                src={currentUser.avatarUrl}
+                alt={currentUser.fullName}
+                className="w-6 h-6 rounded-full object-cover shadow-xs border border-orange-200"
+              />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-orange-500 to-rose-600 text-white font-black flex items-center justify-center text-[10px] shadow-xs">
+                {currentUser?.fullName?.charAt(0) || 'U'}
+              </div>
+            )}
             <div className="hidden sm:flex items-center gap-1.5">
               <span className="font-bold text-slate-800 text-xs">
                 {currentUser?.fullName || 'Học viên'}

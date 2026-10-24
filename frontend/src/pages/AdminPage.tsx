@@ -206,7 +206,7 @@ const INITIAL_SYSTEM_SERVICES: SystemServiceItem[] = [
 
 export const AdminPage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentUser, switchRole, isLoading: isUserLoading } = useUserStore();
+  const { currentUser, switchRole, isLoading: isUserLoading, logout } = useUserStore();
   const isAdmin = currentUser?.role === 'ADMIN';
 
   const handleToggleRole = async () => {
@@ -1084,7 +1084,7 @@ export const AdminPage: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await switchRole('USER');
+    await logout();
     navigate('/');
   };
 
@@ -1405,11 +1405,19 @@ export const AdminPage: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200/90 text-xs shadow-xs">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-orange-500 to-rose-600 text-white font-black flex items-center justify-center text-[10px] shadow-xs">
-              A
-            </div>
+            {currentUser?.avatarUrl ? (
+              <img
+                src={currentUser.avatarUrl}
+                alt={currentUser.fullName}
+                className="w-6 h-6 rounded-full object-cover shadow-xs border border-orange-200"
+              />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-orange-500 to-rose-600 text-white font-black flex items-center justify-center text-[10px] shadow-xs">
+                {currentUser?.fullName?.charAt(0) || 'A'}
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-slate-800 text-xs">Admin</span>
+              <span className="font-bold text-slate-800 text-xs">{currentUser?.fullName || 'Admin'}</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Đang trực tuyến" />
             </div>
             <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-800 border border-amber-200">

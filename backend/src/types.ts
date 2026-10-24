@@ -11,6 +11,8 @@ export interface User {
   role: UserRole;
   tier: UserTier;
   proExpiresAt?: string;
+  avatarUrl?: string;
+  googleId?: string;
 }
 
 export interface Lesson {

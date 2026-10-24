@@ -15,6 +15,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClos
 
   const [apiKey, setApiKey] = useState<string>('');
   const [activeModel, setActiveModel] = useState<string>('gemini-1.5-flash');
+  const [googleClientId, setGoogleClientId] = useState<string>('');
   const [hasKey, setHasKey] = useState<boolean>(false);
   const [maskedKey, setMaskedKey] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -28,6 +29,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClos
         setActiveModel(data.activeModel || 'gemini-1.5-flash');
         setHasKey(data.hasGeminiKey);
         setMaskedKey(data.geminiApiKeyMasked || '');
+        setGoogleClientId(data.googleClientId || '');
       } catch (err) {
         console.error('Error loading AI settings:', err);
       }
@@ -45,9 +47,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClos
       await SettingsAPI.save({
         ...(apiKey ? { gemini_api_key: apiKey.trim() } : {}),
         active_model: activeModel,
+        google_client_id: googleClientId.trim(),
       });
 
-      setMessage('Đã lưu cấu hình AI thành công!');
+      setMessage('Đã lưu cấu hình AI và Google Client ID thành công!');
       setHasKey(Boolean(apiKey || maskedKey));
       setApiKey('');
       setTimeout(() => {
@@ -145,6 +148,33 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClos
               <option value="gemini-3.1-flash-lite">Google Gemini 3.1 Flash Lite (Siêu tốc & Tiết kiệm)</option>
               <option value="offline-smart">Bộ sinh ngữ cảnh nội bộ (Không cần API Key)</option>
             </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-semibold text-slate-700">
+                Google OAuth Client ID (Đăng nhập Google):
+              </label>
+              <a
+                href="https://console.cloud.google.com/apis/credentials"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-orange-600 hover:text-orange-700 flex items-center gap-1 font-medium"
+              >
+                <span>Tạo Client ID</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <input
+              type="text"
+              placeholder="VD: 123456789-abc.apps.googleusercontent.com"
+              value={googleClientId}
+              onChange={(e) => setGoogleClientId(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 font-mono text-xs focus:border-orange-600 focus:ring-1 focus:ring-orange-600 focus:outline-none"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Cần thiết để kích hoạt nút Đăng nhập bằng tài khoản Google và tính năng Google One Tap.
+            </p>
           </div>
 
           <div className="flex items-center gap-3 pt-3 border-t border-slate-200">

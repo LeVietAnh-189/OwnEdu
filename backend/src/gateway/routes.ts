@@ -8,7 +8,7 @@ import { parsePdfBuffer, parseDocxBuffer, parseMarkdownBuffer, chunkText } from 
 import { generateExamJob } from '../ai/examGenerator.js';
 import { structureLessonWithAI } from '../ai/lessonStructureAI.js';
 import { gradeExamAttempt, overrideTeacherGrade } from '../services/gradingService.js';
-import { DocumentItem, ExamAttempt, PaymentPlanId, PaymentOrder } from '../types.js';
+import { DocumentItem, ExamAttempt, PaymentPlanId, PaymentOrder, User } from '../types.js';
 import { VideoService, reloadR2Config } from '../services/videoService.js';
 import { sepayService, SePayWebhookPayload } from '../services/sepayService.js';
 
@@ -158,10 +158,110 @@ export function serviceMaintenanceMiddleware(serviceKey: 'auth' | 'payment' | 'p
 }
 
 // -------------------------------------------------------------
-// USER ENDPOINT
+// USER & AUTH ENDPOINTS
 // -------------------------------------------------------------
+apiRouter.get('/auth/config', (req, res) => {
+  const settings = db.getSettings();
+  const googleClientId = process.env.GOOGLE_CLIENT_ID || settings.googleClientId || '';
+  return successResponse(res, { googleClientId });
+});
+
+apiRouter.post('/auth/google', async (req, res) => {
+  try {
+    const { credential, mockUser } = req.body;
+
+    let googleUser: {
+      sub: string;
+      email: string;
+      name: string;
+      picture?: string;
+      email_verified?: boolean | string;
+    };
+
+    if (credential) {
+      // Verify token with Google API tokeninfo endpoint
+      const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
+      if (!response.ok) {
+        return errorResponse(res, 'E-AUTH-002', 'Google ID Token không hợp lệ hoặc đã hết hạn từ Google.', 401);
+      }
+      const tokenInfo: any = await response.json();
+      if (!tokenInfo.email) {
+        return errorResponse(res, 'E-AUTH-003', 'Không thể xác thực địa chỉ email từ tài khoản Google.', 400);
+      }
+      googleUser = {
+        sub: tokenInfo.sub,
+        email: tokenInfo.email,
+        name: tokenInfo.name || tokenInfo.email.split('@')[0],
+        picture: tokenInfo.picture,
+        email_verified: tokenInfo.email_verified
+      };
+    } else if (mockUser && mockUser.email) {
+      // Mode demo/testing nếu chưa cấu hình Google Client ID
+      googleUser = {
+        sub: `mock_google_${Date.now()}`,
+        email: mockUser.email,
+        name: mockUser.name || 'Google User',
+        picture: mockUser.picture || 'https://lh3.googleusercontent.com/a/default-user',
+        email_verified: true
+      };
+    } else {
+      return errorResponse(res, 'E-AUTH-001', 'Thiếu thông tin xác thực Google (credential).', 400);
+    }
+
+    // Tìm kiếm người dùng theo Google Sub (ID) hoặc Email
+    let user = db.getUserByGoogleId(googleUser.sub) || db.getUserByEmail(googleUser.email);
+
+    if (user) {
+      user = db.updateUser(user.id, {
+        fullName: googleUser.name || user.fullName,
+        avatarUrl: googleUser.picture || user.avatarUrl,
+        googleId: googleUser.sub
+      }) || user;
+    } else {
+      const users = db.getUsers();
+      const nextNum = users.length + 1;
+      const isAdminEmail = googleUser.email.toLowerCase().includes('admin') || googleUser.email.toLowerCase() === 'admin@ownedu.edu.vn';
+
+      const newUser: User = {
+        id: `usr_${uuidv4().slice(0, 8)}`,
+        code: `OE-${String(nextNum).padStart(4, '0')}`,
+        fullName: googleUser.name,
+        email: googleUser.email.toLowerCase(),
+        role: isAdminEmail ? 'ADMIN' : 'USER',
+        tier: 'FREE',
+        avatarUrl: googleUser.picture,
+        googleId: googleUser.sub
+      };
+      user = db.addUser(newUser);
+    }
+
+    // Lưu active user session
+    db.setActiveUserId(user.id);
+
+    return successResponse(res, {
+      user,
+      message: 'Đăng nhập bằng tài khoản Google thành công!'
+    });
+  } catch (err: any) {
+    console.error('[Google Auth Error]:', err);
+    return errorResponse(res, 'E-AUTH-500', `Lỗi xử lý đăng nhập Google: ${err.message}`, 500);
+  }
+});
+
+apiRouter.post('/auth/logout', (req, res) => {
+  db.setActiveUserId(null);
+  return successResponse(res, { message: 'Đã đăng xuất thành công.' });
+});
+
 apiRouter.get('/users/me', (req, res) => {
-  const user = db.getCurrentUser();
+  const headerUserId = req.headers['x-user-id'] as string;
+  let user: User | undefined;
+  if (headerUserId) {
+    user = db.getUserById(headerUserId);
+  }
+  if (!user) {
+    user = db.getCurrentUser();
+  }
   return successResponse(res, user);
 });
 
@@ -604,6 +704,7 @@ apiRouter.get('/settings', (req, res) => {
   const settings = db.getSettings();
   const effectiveGemini = settings.geminiApiKey || process.env.GEMINI_API_KEY || '';
   const effectiveOpenAi = settings.openaiApiKey || process.env.OPENAI_API_KEY || '';
+  const effectiveGoogleClientId = settings.googleClientId || process.env.GOOGLE_CLIENT_ID || '';
 
   return successResponse(res, {
     activeModel: settings.activeModel || 'gemini-2.5-flash',
@@ -612,6 +713,8 @@ apiRouter.get('/settings', (req, res) => {
     geminiApiKeyMasked: effectiveGemini ? `${effectiveGemini.slice(0, 8)}...${effectiveGemini.slice(-4)}` : '',
     openaiApiKey: effectiveOpenAi,
     hasOpenAiKey: Boolean(effectiveOpenAi),
+    googleClientId: effectiveGoogleClientId,
+    hasGoogleAuth: Boolean(effectiveGoogleClientId),
     // Cloudflare R2 Credentials & Config
     r2AccountId: process.env.CLOUDFLARE_R2_ACCOUNT_ID || '',
     r2AccessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
@@ -639,6 +742,7 @@ apiRouter.post('/settings', (req, res) => {
     gemini_api_key,
     openai_api_key,
     active_model,
+    google_client_id,
     r2_account_id,
     r2_access_key_id,
     r2_secret_access_key,
@@ -650,11 +754,13 @@ apiRouter.post('/settings', (req, res) => {
     ...(gemini_api_key !== undefined && { geminiApiKey: gemini_api_key }),
     ...(openai_api_key !== undefined && { openaiApiKey: openai_api_key }),
     ...(active_model !== undefined && { activeModel: active_model }),
+    ...(google_client_id !== undefined && { googleClientId: google_client_id }),
   });
 
   // Update runtime process.env
   if (gemini_api_key !== undefined) process.env.GEMINI_API_KEY = gemini_api_key;
   if (openai_api_key !== undefined) process.env.OPENAI_API_KEY = openai_api_key;
+  if (google_client_id !== undefined) process.env.GOOGLE_CLIENT_ID = google_client_id;
   if (r2_account_id !== undefined) process.env.CLOUDFLARE_R2_ACCOUNT_ID = r2_account_id;
   if (r2_access_key_id !== undefined) process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = r2_access_key_id;
   if (r2_secret_access_key !== undefined) process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = r2_secret_access_key;
@@ -683,6 +789,7 @@ apiRouter.post('/settings', (req, res) => {
 
         updateEnvVar('GEMINI_API_KEY', gemini_api_key);
         updateEnvVar('OPENAI_API_KEY', openai_api_key);
+        updateEnvVar('GOOGLE_CLIENT_ID', google_client_id);
         updateEnvVar('CLOUDFLARE_R2_ACCOUNT_ID', r2_account_id);
         updateEnvVar('CLOUDFLARE_R2_ACCESS_KEY_ID', r2_access_key_id);
         updateEnvVar('CLOUDFLARE_R2_SECRET_ACCESS_KEY', r2_secret_access_key);
